@@ -270,6 +270,9 @@ namespace t2
     HashState sighash;
     FILE* debug_log = (FILE*) queue->m_Config.m_FileSigningLog;
 
+    // TODO: Give each BuildQueue thread a separate hashComponentLog so that we don't need the mutex.
+    // As long as they're all around when we're saving the build state, and we know which log to use
+    // for each node, we can just pull the values from each thread's log instance as we go along.
     if (hashComponentLog)
       MutexLock(&hashComponentLog->mutex);
 
@@ -284,6 +287,10 @@ namespace t2
       HashInit(&sighash);
     }
 
+    // TODO: In most cases we already have the components in the buildstate and the signature hasn't changed,
+    // which makes logging the components unnecessary. Would be nicer if we could void logging the hash
+    // components unless a) the buildstate doesn't have them or b) the signature has actually changed (which 
+    // will mean hashing twice, but that would probably still be faster on average).
     HashSetLogComponents(&sighash, hashComponentLog);
 
     // Start with command line action. If that changes, we'll definitely have to rebuild.
@@ -385,10 +392,11 @@ namespace t2
 
       if (hashComponentLog != nullptr)
       {
-        // Figure out why it changed
+        // TODO: This should probably be in a separate function, and ideally we would just emit one
+        // structured log event per changed signature, rather than one per changed component.
         if (prev_state->m_InputSignatureComponents.GetCount() != node->m_TotalInputSignatureComponents)
         {
-          Log(kInfo, "Node \"%s\" - hash input signature components changed structure entirely", node_data->m_Annotation.Get());
+          LogStructured(kInfo, "inputSignatureChanged", "\"node\":\"%s\"", node_data->m_Annotation.Get());
         }
         else
         {
@@ -399,8 +407,8 @@ namespace t2
             const char* key = &hashComponentLog->strings[component.m_Key];
             const char* value = &hashComponentLog->strings[component.m_Value];
               
-              const char* prevKey = prev_state->m_InputSignatureComponents[i].m_Key.Get();
-              const char* prevValue = prev_state->m_InputSignatureComponents[i].m_Value.Get();
+            const char* prevKey = prev_state->m_InputSignatureComponents[i].m_Key.Get();
+            const char* prevValue = prev_state->m_InputSignatureComponents[i].m_Value.Get();
 
             if (0 != strcmp(key, prevKey)
             ||  0 != strcmp(value, prevValue))

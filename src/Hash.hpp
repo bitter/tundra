@@ -161,6 +161,8 @@ struct HashComponent
 
 struct HashComponentLog
 {
+  // TODO: Instead of HashComponent storing indices into the strings buffer, it might be nicer to use
+  // BinaryWriter to build this up, where components and strings are BinarySegments. Look into it...
   Buffer<HashComponent> components;
   Buffer<char> strings;
   MemAllocHeap* heap;

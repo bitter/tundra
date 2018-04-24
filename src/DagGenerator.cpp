@@ -906,6 +906,8 @@ static bool CompileDag(const JsonObjectValue* root, BinaryWriter* writer, MemAll
   WriteStringPtr(main_seg, str_seg, FindStringValue(root, "DigestCacheFileNameTmp", ".tundra2.digestcache.tmp"));
   
   WriteStringPtr(main_seg, str_seg, FindStringValue(root, "BuildTitle", "Tundra"));
+  WriteStringPtr(main_seg, str_seg, FindStringValue(root, "StructuredLogPath"));
+
   BinarySegmentWriteInt32(main_seg, (int) FindIntValue(root, "ForceDagRebuild", 0));
 
   HashTableDestroy(&shared_strings);
@@ -936,8 +938,6 @@ static bool CreateDagFromJsonData(char* json_memory, const char* dag_fn)
   {
     if (const JsonObjectValue* obj = value->AsObject())
     {
-      SetStructuredLogPath(FindStringValue(obj, "StructuredLogPath"));
-
       if (obj->m_Count == 0)
       {
         Log(kInfo, "Nothing to do");

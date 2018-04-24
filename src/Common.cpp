@@ -254,6 +254,7 @@ void LogStructured(LogLevel level, const char* msg, const char* payloadFmt, ...)
   }
 
   fputs("}\n", s_StructuredLog);
+  fflush(s_StructuredLog);
 
   MutexUnlock(&s_StructuredLogMutex);
 }

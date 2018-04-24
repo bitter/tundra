@@ -1,4 +1,4 @@
-﻿#include "BuildQueue.hpp"
+#include "BuildQueue.hpp"
 #include "DagData.hpp"
 #include "MemAllocHeap.hpp"
 #include "MemAllocLinear.hpp"
@@ -254,8 +254,8 @@ namespace t2
     PathStripLast(&path);
     return MakeDirectoriesRecursive(stat_cache, path);
   }
-
-  static BuildProgress::Enum CheckInputSignature(BuildQueue* queue, ThreadState* thread_state, NodeState* node, Mutex* queue_lock)
+    
+  static BuildProgress::Enum CheckInputSignature(BuildQueue* queue, ThreadState* thread_state, NodeState* node, Mutex* queue_lock, HashComponentLog* hashComponentLog)
   {
     CHECK(AllDependenciesReady(queue, node));
 
@@ -270,6 +270,9 @@ namespace t2
     HashState sighash;
     FILE* debug_log = (FILE*) queue->m_Config.m_FileSigningLog;
 
+    if (hashComponentLog)
+      MutexLock(&hashComponentLog->mutex);
+
     if (debug_log)
     {
       MutexLock(queue->m_Config.m_FileSigningLogMutex);
@@ -281,12 +284,16 @@ namespace t2
       HashInit(&sighash);
     }
 
+    HashSetLogComponents(&sighash, hashComponentLog);
+
     // Start with command line action. If that changes, we'll definitely have to rebuild.
+    HashSetNextComponent(&sighash, "Action", true);
     HashAddString(&sighash, node_data->m_Action);
     HashAddSeparator(&sighash);
 
     if (const char* pre_action = node_data->m_PreAction)
     {
+      HashSetNextComponent(&sighash, "PreAction", true);
       HashAddString(&sighash, pre_action);
       HashAddSeparator(&sighash);
     }
@@ -296,6 +303,7 @@ namespace t2
     for (const FrozenFileAndHash& input : node_data->m_InputFiles)
     {
       // Add path and timestamp of every direct input file.
+      HashSetNextComponent(&sighash, input.m_Filename, true);
       HashAddPath(&sighash, input.m_Filename);
       ComputeFileSignature(&sighash, stat_cache, digest_cache, input.m_Filename, input.m_FilenameHash, config.m_ShaDigestExtensions, config.m_ShaDigestExtensionCount);
 
@@ -319,6 +327,7 @@ namespace t2
           {
             // Add path and timestamp of every indirect input file (#includes)
             const FileAndHash& path = scan_output.m_IncludedFiles[i];
+            HashSetNextComponent(&sighash, path.m_Filename, true);
             HashAddPath(&sighash, path.m_Filename);
             ComputeFileSignature(&sighash, stat_cache, digest_cache, path.m_Filename, path.m_FilenameHash, config.m_ShaDigestExtensions, config.m_ShaDigestExtensionCount);
           }
@@ -327,12 +336,21 @@ namespace t2
     }
 
     for (const FrozenString& input : node_data->m_AllowedOutputSubstrings)
+    {
+      HashSetNextComponent(&sighash, "AllowedOutputSubstring", true);
       HashAddString(&sighash, (const char*)input);
+    }
 
+    HashSetNextComponent(&sighash, "AllowUnexpectedOutput", false);
     HashAddInteger(&sighash, (node_data->m_Flags & NodeData::kFlagAllowUnexpectedOutput) ? 1 : 0);
 
     HashFinalize(&sighash, &node->m_InputSignature);
 
+    node->m_TotalInputSignatureComponents = sighash.m_ComponentCount;
+    node->m_FirstInputSignatureComponentIndex = sighash.m_LastComponentIndex + 1 - sighash.m_ComponentCount;
+      
+    if (hashComponentLog)
+      MutexUnlock(&hashComponentLog->mutex);
 
     if (debug_log)
     {
@@ -351,6 +369,7 @@ namespace t2
     {
       // This is a new node - we must built it
       Log(kSpam, "T=%d: building %s - new node", thread_state->m_ThreadIndex, node_data->m_Annotation.Get());
+      LogStructured(kInfo, "newNode", "\"node\":\"%s\"", node_data->m_Annotation.Get());
       next_state = BuildProgress::kRunAction;
     }
     else if (prev_state->m_InputSignature != node->m_InputSignature)
@@ -363,6 +382,35 @@ namespace t2
       DigestToString(newDigest, node->m_InputSignature);
 
       Log(kSpam, "T=%d: building %s - input signature changed. was:%s now:%s", thread_state->m_ThreadIndex, node_data->m_Annotation.Get(), oldDigest, newDigest);
+
+      if (hashComponentLog != nullptr)
+      {
+        // Figure out why it changed
+        if (prev_state->m_InputSignatureComponents.GetCount() != node->m_TotalInputSignatureComponents)
+        {
+          Log(kInfo, "Node \"%s\" - hash input signature components changed structure entirely", node_data->m_Annotation.Get());
+        }
+        else
+        {
+          MutexLock(&hashComponentLog->mutex);
+          for (int i = 0; i < node->m_TotalInputSignatureComponents; ++i)
+          {
+            HashComponent& component = hashComponentLog->components[node->m_FirstInputSignatureComponentIndex + i];
+            const char* key = &hashComponentLog->strings[component.m_Key];
+            const char* value = &hashComponentLog->strings[component.m_Value];
+              
+              const char* prevKey = prev_state->m_InputSignatureComponents[i].m_Key.Get();
+              const char* prevValue = prev_state->m_InputSignatureComponents[i].m_Value.Get();
+
+            if (0 != strcmp(key, prevKey)
+            ||  0 != strcmp(value, prevValue))
+              LogStructured(kInfo, "inputSignatureChanged", "\"node\":\"%s\", \"key\":\"%s\", \"old\":\"%s\", \"new\":\"%s\"", node_data->m_Annotation.Get(),
+                key, prevValue, value);
+          }
+          MutexUnlock(&hashComponentLog->mutex);
+        }
+      }
+
       next_state = BuildProgress::kRunAction;
     }
     else if (prev_state->m_BuildResult != 0)
@@ -602,7 +650,7 @@ namespace t2
       WakeWaiters(queue, enqueue_count);
   }
 
-  static void AdvanceNode(BuildQueue* queue, ThreadState* thread_state, NodeState* node, Mutex* queue_lock)
+  static void AdvanceNode(BuildQueue* queue, ThreadState* thread_state, NodeState* node, Mutex* queue_lock, HashComponentLog* inputSignatureHashLog)
   {
     Log(kSpam, "T=%d, [%d] Advancing %s\n",
         thread_state->m_ThreadIndex, node->m_Progress, node->m_MmapData->m_Annotation.Get());
@@ -633,7 +681,7 @@ namespace t2
           break;
 
         case BuildProgress::kUnblocked:
-          node->m_Progress = CheckInputSignature(queue, thread_state, node, queue_lock);
+          node->m_Progress = CheckInputSignature(queue, thread_state, node, queue_lock, inputSignatureHashLog);
           break;
 
         case BuildProgress::kRunAction:
@@ -752,7 +800,7 @@ namespace t2
     {
       if (NodeState* node = NextNode(queue))
       {
-        AdvanceNode(queue, thread_state, node, mutex);
+        AdvanceNode(queue, thread_state, node, mutex, queue->m_Config.m_InputSignatureHashLog);
       }
       else
       {

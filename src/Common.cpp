@@ -1,6 +1,7 @@
 #include "Common.hpp"
 #include "PathUtil.hpp"
 #include "FileInfo.hpp"
+#include "Mutex.hpp"
 
 #include <cstdio>
 #include <cstdarg>
@@ -199,6 +200,62 @@ void Log(LogLevel level, const char* fmt, ...)
 
     fprintf(stderr, "\n");
   }
+}
+
+static FILE* s_StructuredLog = nullptr;
+static Mutex s_StructuredLogMutex;
+
+void SetStructuredLogPath(const char* path)
+{
+  if (s_StructuredLog != nullptr)
+  {
+    fclose(s_StructuredLog);
+    MutexDestroy(&s_StructuredLogMutex);
+    s_StructuredLog = nullptr;
+  }
+  
+  if (path != nullptr)
+  {
+    s_StructuredLog = fopen(path, "w");
+    MutexInit(&s_StructuredLogMutex);
+  }
+}
+
+void LogStructured(LogLevel level, const char* msg, const char* payloadFmt, ...)
+{
+  if (s_StructuredLog == nullptr)
+    return;
+
+  MutexLock(&s_StructuredLogMutex);
+
+  fputs("{", s_StructuredLog);
+  switch(level)
+  {
+    case kError:    fputs("\"level\":\"error\"", s_StructuredLog); break;
+    case kWarning:  fputs("\"level\":\"warning\"", s_StructuredLog); break;
+    case kInfo:     fputs("\"level\":\"info\"", s_StructuredLog); break;
+    case kDebug:    fputs("\"level\":\"debug\"", s_StructuredLog); break;
+    case kSpam:     fputs("\"level\":\"spam\"", s_StructuredLog); break;
+    default:        fputs("\"level\":\"unknown\"", s_StructuredLog); break;
+  }
+
+  fputs(",\"msg\":\"", s_StructuredLog);
+  fputs(msg, s_StructuredLog);
+  fputc('\"', s_StructuredLog);
+  
+  if (payloadFmt != NULL && payloadFmt[0] != 0)
+  {
+    fputc(',', s_StructuredLog);
+
+    va_list args;
+    va_start(args, payloadFmt);
+    vfprintf(s_StructuredLog, payloadFmt, args);
+    va_end(args);
+  }
+
+  fputs("}\n", s_StructuredLog);
+
+  MutexUnlock(&s_StructuredLogMutex);
 }
 
 void GetCwd(char* buffer, size_t buffer_size)

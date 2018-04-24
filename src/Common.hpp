@@ -71,6 +71,8 @@ void SetLogFlags(int log_level);
 
 void Log(LogLevel level, const char* fmt, ...);
 
+void SetStructuredLogPath(const char* path);
+void LogStructured(LogLevel level, const char* msg, const char* payloadFmt, ...);
 
 //-----------------------------------------------------------------------------
 // String hashing

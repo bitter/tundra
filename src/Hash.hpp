@@ -2,6 +2,7 @@
 #define HASHER_HPP
 
 #include "Common.hpp"
+#include "Buffer.hpp"
 #include <cstring>
 
 namespace t2
@@ -152,6 +153,20 @@ struct ALIGN(16) HashStateImpl
 };
 #endif
 
+struct HashComponent
+{
+  uint32_t m_Key;
+  uint32_t m_Value;
+};
+
+struct HashComponentLog
+{
+  Buffer<HashComponent> components;
+  Buffer<char> strings;
+  MemAllocHeap* heap;
+  Mutex mutex;
+};
+
 struct ALIGN(16) HashState
 {
   HashStateImpl m_StateImpl;
@@ -159,6 +174,12 @@ struct ALIGN(16) HashState
   size_t        m_BufUsed;
   uint8_t       m_Buffer[64];
   void*         m_DebugFile;
+  
+  HashComponentLog* m_ComponentLog;
+  const char*   m_NextComponentName;
+  bool          m_NextComponentIsString;
+  size_t        m_LastComponentIndex;
+  size_t        m_ComponentCount;
 };
 
 // Initialize hashing state.
@@ -166,6 +187,11 @@ void HashInit(HashState* h);
 
 // Initialize hashing state, appending debug data to a file.
 void HashInitDebug(HashState* h, void* file_handle);
+
+// Install a log target for hash components, to record the values that the hash was actually calculated from
+void HashSetLogComponents(HashState* h, HashComponentLog* componentLog);
+
+void HashSetNextComponent(HashState* h, const char* name, bool isString);
 
 // Add arbitrary data to be hashed.
 void HashUpdate(HashState* h, const void* data, size_t size);
@@ -181,9 +207,9 @@ void HashAddStringFoldCase(HashState* self, const char* path);
 inline void HashAddPath(HashState* self, const char* path)
 {
 #if ENABLED(TUNDRA_CASE_INSENSITIVE_FILESYSTEM)
-  HashAddStringFoldCase(self,path);
+  HashAddStringFoldCase(self, path);
 #else
-  HashAddString(self,path);  
+  HashAddString(self, path);  
 #endif
 }
 

@@ -1,5 +1,7 @@
 #include "Hash.hpp"
 #include "MemAllocLinear.hpp"
+#include "Buffer.hpp"
+
 
 #include <cstring>
 #include <cstdio>
@@ -47,6 +49,40 @@ void HashUpdate(HashState* self, const void *data_in, size_t size)
   
   self->m_BufUsed  = used;
   self->m_MsgSize += size * 8;
+
+  if (self->m_ComponentLog != nullptr && self->m_NextComponentName != nullptr)
+  {
+    // Log this component
+    HashComponent c;
+    c.m_Key = self->m_ComponentLog->strings.m_Size;
+    BufferAppend(&self->m_ComponentLog->strings, self->m_ComponentLog->heap, self->m_NextComponentName, strlen(self->m_NextComponentName) + 1);
+
+    c.m_Value = self->m_ComponentLog->strings.m_Size;
+    if (self->m_NextComponentIsString)
+    {
+      BufferAppend(&self->m_ComponentLog->strings, self->m_ComponentLog->heap, (const char*)data_in, size);
+      BufferAppendOne(&self->m_ComponentLog->strings, self->m_ComponentLog->heap, 0);
+    }
+    else
+    {
+      const char* hexBytes = "0123456789ABCDEF";
+      BufferAppend(&self->m_ComponentLog->strings, self->m_ComponentLog->heap, "0x", 2);
+      for (size_t i = 0; i < size; ++i)
+      {
+        uint8_t byte = ((uint8_t*)data_in)[i];
+        BufferAppendOne(&self->m_ComponentLog->strings, self->m_ComponentLog->heap, hexBytes[byte >> 4]);
+        BufferAppendOne(&self->m_ComponentLog->strings, self->m_ComponentLog->heap, hexBytes[byte & 0x0F]);
+      }
+      BufferAppendOne(&self->m_ComponentLog->strings, self->m_ComponentLog->heap, 0);
+    }
+
+    BufferAppendOne(&self->m_ComponentLog->components, self->m_ComponentLog->heap, c);
+
+    self->m_ComponentCount++;
+    self->m_LastComponentIndex = self->m_ComponentLog->components.m_Size - 1;
+
+    self->m_NextComponentName = nullptr;
+  }
 }
 
 // Quickie to generate a hash digest from a single string
@@ -60,14 +96,13 @@ void HashSingleString(HashDigest* digest_out, const char* string)
 
 void HashAddStringFoldCase(HashState* self, const char* path)
 {
-  while (true)
-  {
-    char c = *path++;
-    if (c == 0)
-      return;
-      c = FoldCase(c);
-      HashUpdate(self, &c, 1);
-  }
+  const size_t strLength = strlen(path);
+
+  char* foldedCase = (char*)alloca(strLength);
+  for (size_t i = 0; i < strLength; ++i)
+    foldedCase[i] = FoldCase(path[i]);
+
+  HashUpdate(self, foldedCase, strLength);
 }
 
 void HashAddInteger(HashState* self, uint64_t value)
@@ -95,6 +130,7 @@ void HashInit(HashState* self)
   self->m_MsgSize = 0;
   self->m_BufUsed = 0;
   self->m_DebugFile = nullptr;
+  self->m_ComponentLog = 0;
   HashInitImpl(&self->m_StateImpl);
 }
 
@@ -103,7 +139,21 @@ void HashInitDebug(HashState* self, void* fh)
   self->m_MsgSize = 0;
   self->m_BufUsed = 0;
   self->m_DebugFile = fh;
+  self->m_ComponentLog = 0;
   HashInitImpl(&self->m_StateImpl);
+}
+
+void HashSetLogComponents(HashState* self, HashComponentLog* componentLog)
+{
+  self->m_ComponentLog = componentLog;
+  self->m_ComponentCount = 0;
+  self->m_LastComponentIndex = 0;
+}
+
+void HashSetNextComponent(HashState* self, const char* name, bool isString)
+{
+  self->m_NextComponentName = name;
+  self->m_NextComponentIsString = isString;
 }
 
 void HashFinalize(HashState* self, HashDigest* digest)

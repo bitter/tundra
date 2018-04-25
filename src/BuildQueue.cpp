@@ -258,7 +258,7 @@ namespace t2
     return MakeDirectoriesRecursive(stat_cache, path);
   }
 
-  static void ReportInputSignatureChangeCause(JsonWriter* msg, NodeState* node, const NodeStateData* prev_state, HashComponentLog* hashComponentLog)
+  static void ReportInputSignatureChangeCause(JsonWriter* msg, NodeState* node, const uint64_t node_index, const NodeStateData* prev_state, HashComponentLog* hashComponentLog)
   {
     JsonWriteReset(msg);
     JsonWriteStartObject(msg);
@@ -266,6 +266,8 @@ namespace t2
     JsonWriteValueString(msg, "inputSignatureChanged");
     JsonWriteKeyName(msg, "annotation");
     JsonWriteValueString(msg, node->m_MmapData->m_Annotation.Get());
+    JsonWriteKeyName(msg, "index");
+    JsonWriteValueInteger(msg, node_index);
 
     if (prev_state->m_InputSignatureComponents.GetCount() != node->m_ComponentLogRange.m_Count)
     {
@@ -364,6 +366,7 @@ namespace t2
     HashComponentLog* component_log = config.m_InputSignatureHashLog;
 
     const NodeData* node_data = node->m_MmapData;
+    const uint64_t node_index = (node_data - queue->m_Config.m_NodeData);
 
     HashState sighash;
     FILE* debug_log = (FILE*) queue->m_Config.m_FileSigningLog;
@@ -469,8 +472,10 @@ namespace t2
       JsonWriteStartObject(msg);
       JsonWriteKeyName(msg, "msg");
       JsonWriteValueString(msg, "newNode");
-      JsonWriteKeyName(msg, "node");
+      JsonWriteKeyName(msg, "annotation");
       JsonWriteValueString(msg, node_data->m_Annotation);
+      JsonWriteKeyName(msg, "index");
+      JsonWriteValueInteger(msg, node_index);
       JsonWriteEndObject(msg);
       LogStructured(msg);
 
@@ -488,7 +493,7 @@ namespace t2
       Log(kSpam, "T=%d: building %s - input signature changed. was:%s now:%s", thread_state->m_ThreadIndex, node_data->m_Annotation.Get(), oldDigest, newDigest);
 
       if (component_log != nullptr)
-        ReportInputSignatureChangeCause(&thread_state->m_StructuredMsg, node, prev_state, component_log);
+        ReportInputSignatureChangeCause(&thread_state->m_StructuredMsg, node, node_index, prev_state, component_log);
 
       next_state = BuildProgress::kRunAction;
     }

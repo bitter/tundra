@@ -16,6 +16,7 @@
 #include "Profiler.hpp"
 #include "NodeResultPrinting.hpp"
 #include "OutputValidation.hpp"
+#include "JsonWriter.hpp"
 
 #include <stdio.h>
 
@@ -39,10 +40,12 @@ namespace t2
     LinearAllocInit(&self->m_ScratchAlloc, &self->m_LocalHeap, scratch_size, "thread-local scratch");
     self->m_ThreadIndex = index;
     self->m_Queue       = queue;
+    JsonWriteInit(&self->m_StructuredMsg, &self->m_LocalHeap);
   }
 
   static void ThreadStateDestroy(ThreadState* self)
   {
+    JsonWriteDestroy(&self->m_StructuredMsg);
     LinearAllocDestroy(&self->m_ScratchAlloc);
     HeapDestroy(&self->m_LocalHeap);
   }
@@ -254,6 +257,78 @@ namespace t2
     PathStripLast(&path);
     return MakeDirectoriesRecursive(stat_cache, path);
   }
+
+  static void ReportInputSignatureChangeCause(JsonWriter* msg, NodeState* node, const NodeStateData* prev_state, HashComponentLog* hashComponentLog)
+  {
+    JsonWriteReset(msg);
+    JsonWriteStartObject(msg);
+    JsonWriteKeyName(msg, "msg");
+    JsonWriteValueString(msg, "inputSignatureChanged");
+    JsonWriteKeyName(msg, "annotation");
+    JsonWriteValueString(msg, node->m_MmapData->m_Annotation.Get());
+
+    // TODO: This should probably be in a separate function, and ideally we would just emit one
+    // structured log event per changed signature, rather than one per changed component.
+    if (prev_state->m_InputSignatureComponents.GetCount() != node->m_TotalInputSignatureComponents)
+    {
+      JsonWriteKeyName(msg, "oldKeyCount");
+      JsonWriteValueInteger(msg, prev_state->m_InputSignatureComponents.GetCount());
+      JsonWriteKeyName(msg, "newKeyCount");
+      JsonWriteValueInteger(msg, node->m_TotalInputSignatureComponents);
+      goto endObjectAndLog;
+    }
+    
+    MutexLock(&hashComponentLog->mutex);
+
+    JsonWriteKeyName(msg, "changes");
+    JsonWriteStartArray(msg);
+
+    for (int i = 0; i < node->m_TotalInputSignatureComponents; ++i)
+    {
+      HashComponent& component = hashComponentLog->components[node->m_FirstInputSignatureComponentIndex + i];
+
+      const char* key = &hashComponentLog->strings[component.m_Key];
+      const char* prevKey = prev_state->m_InputSignatureComponents[i].m_Key.Get();
+      const bool keyChanged = (0 != strcmp(key, prevKey));
+
+      const char* value = &hashComponentLog->strings[component.m_Value];
+      const char* prevValue = prev_state->m_InputSignatureComponents[i].m_Value.Get();
+      const bool valueChanged = (0 != strcmp(value, prevValue));
+
+      if (!keyChanged && !valueChanged)
+        continue;
+
+      JsonWriteStartObject(msg);
+
+      JsonWriteKeyName(msg, "key");
+      JsonWriteValueString(msg, key);
+
+      JsonWriteKeyName(msg, "value");
+      JsonWriteValueString(msg, value);
+
+      if (keyChanged)
+      {
+        JsonWriteKeyName(msg, "oldkey");
+        JsonWriteValueString(msg, prevKey);
+      }
+
+      if (valueChanged)
+      {
+        JsonWriteKeyName(msg, "oldvalue");
+        JsonWriteValueString(msg, prevValue);
+      }
+
+      JsonWriteEndObject(msg);
+    }
+
+    JsonWriteEndArray(msg);
+
+    MutexUnlock(&hashComponentLog->mutex);
+
+  endObjectAndLog:
+    JsonWriteEndObject(msg);
+    LogStructured(msg);
+  }
     
   static BuildProgress::Enum CheckInputSignature(BuildQueue* queue, ThreadState* thread_state, NodeState* node, Mutex* queue_lock, HashComponentLog* hashComponentLog)
   {
@@ -376,7 +451,17 @@ namespace t2
     {
       // This is a new node - we must built it
       Log(kSpam, "T=%d: building %s - new node", thread_state->m_ThreadIndex, node_data->m_Annotation.Get());
-      LogStructured(kInfo, "newNode", "\"node\":\"%s\"", node_data->m_Annotation.Get());
+
+      JsonWriter* msg = &thread_state->m_StructuredMsg;
+      JsonWriteReset(msg);
+      JsonWriteStartObject(msg);
+      JsonWriteKeyName(msg, "msg");
+      JsonWriteValueString(msg, "newNode");
+      JsonWriteKeyName(msg, "node");
+      JsonWriteValueString(msg, node_data->m_Annotation);
+      JsonWriteEndObject(msg);
+      LogStructured(msg);
+
       next_state = BuildProgress::kRunAction;
     }
     else if (prev_state->m_InputSignature != node->m_InputSignature)
@@ -391,33 +476,7 @@ namespace t2
       Log(kSpam, "T=%d: building %s - input signature changed. was:%s now:%s", thread_state->m_ThreadIndex, node_data->m_Annotation.Get(), oldDigest, newDigest);
 
       if (hashComponentLog != nullptr)
-      {
-        // TODO: This should probably be in a separate function, and ideally we would just emit one
-        // structured log event per changed signature, rather than one per changed component.
-        if (prev_state->m_InputSignatureComponents.GetCount() != node->m_TotalInputSignatureComponents)
-        {
-          LogStructured(kInfo, "inputSignatureChanged", "\"node\":\"%s\"", node_data->m_Annotation.Get());
-        }
-        else
-        {
-          MutexLock(&hashComponentLog->mutex);
-          for (int i = 0; i < node->m_TotalInputSignatureComponents; ++i)
-          {
-            HashComponent& component = hashComponentLog->components[node->m_FirstInputSignatureComponentIndex + i];
-            const char* key = &hashComponentLog->strings[component.m_Key];
-            const char* value = &hashComponentLog->strings[component.m_Value];
-              
-            const char* prevKey = prev_state->m_InputSignatureComponents[i].m_Key.Get();
-            const char* prevValue = prev_state->m_InputSignatureComponents[i].m_Value.Get();
-
-            if (0 != strcmp(key, prevKey)
-            ||  0 != strcmp(value, prevValue))
-              LogStructured(kInfo, "inputSignatureChanged", "\"node\":\"%s\", \"key\":\"%s\", \"old\":\"%s\", \"new\":\"%s\"", node_data->m_Annotation.Get(),
-                key, prevValue, value);
-          }
-          MutexUnlock(&hashComponentLog->mutex);
-        }
-      }
+        ReportInputSignatureChangeCause(&thread_state->m_StructuredMsg, node, prev_state, hashComponentLog);
 
       next_state = BuildProgress::kRunAction;
     }

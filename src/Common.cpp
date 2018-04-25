@@ -2,6 +2,7 @@
 #include "PathUtil.hpp"
 #include "FileInfo.hpp"
 #include "Mutex.hpp"
+#include "JsonWriter.hpp"
 
 #include <cstdio>
 #include <cstdarg>
@@ -221,42 +222,19 @@ void SetStructuredLogPath(const char* path)
   }
 }
 
-void LogStructured(LogLevel level, const char* msg, const char* payloadFmt, ...)
+void LogStructured(JsonWriter* writer)
 {
   if (s_StructuredLog == nullptr)
     return;
 
   MutexLock(&s_StructuredLogMutex);
 
-  fputs("{", s_StructuredLog);
-  switch(level)
-  {
-    case kError:    fputs("\"level\":\"error\"", s_StructuredLog); break;
-    case kWarning:  fputs("\"level\":\"warning\"", s_StructuredLog); break;
-    case kInfo:     fputs("\"level\":\"info\"", s_StructuredLog); break;
-    case kDebug:    fputs("\"level\":\"debug\"", s_StructuredLog); break;
-    case kSpam:     fputs("\"level\":\"spam\"", s_StructuredLog); break;
-    default:        fputs("\"level\":\"unknown\"", s_StructuredLog); break;
-  }
-
-  fputs(",\"msg\":\"", s_StructuredLog);
-  fputs(msg, s_StructuredLog);
-  fputc('\"', s_StructuredLog);
-  
-  if (payloadFmt != NULL && payloadFmt[0] != 0)
-  {
-    fputc(',', s_StructuredLog);
-
-    va_list args;
-    va_start(args, payloadFmt);
-    vfprintf(s_StructuredLog, payloadFmt, args);
-    va_end(args);
-  }
-
-  fputs("}\n", s_StructuredLog);
-  fflush(s_StructuredLog);
+  fwrite(writer->m_Buffer.m_Storage, 1, writer->m_Buffer.m_Size, s_StructuredLog);
+  fputc('\n', s_StructuredLog);
 
   MutexUnlock(&s_StructuredLogMutex);
+
+  fflush(s_StructuredLog);
 }
 
 void GetCwd(char* buffer, size_t buffer_size)

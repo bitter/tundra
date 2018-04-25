@@ -71,8 +71,10 @@ void SetLogFlags(int log_level);
 
 void Log(LogLevel level, const char* fmt, ...);
 
+struct JsonWriter;
+
 void SetStructuredLogPath(const char* path);
-void LogStructured(LogLevel level, const char* msg, const char* payloadFmt, ...);
+void LogStructured(JsonWriter* writer);
 
 //-----------------------------------------------------------------------------
 // String hashing

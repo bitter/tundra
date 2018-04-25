@@ -267,8 +267,6 @@ namespace t2
     JsonWriteKeyName(msg, "annotation");
     JsonWriteValueString(msg, node->m_MmapData->m_Annotation.Get());
 
-    // TODO: This should probably be in a separate function, and ideally we would just emit one
-    // structured log event per changed signature, rather than one per changed component.
     if (prev_state->m_InputSignatureComponents.GetCount() != node->m_TotalInputSignatureComponents)
     {
       JsonWriteKeyName(msg, "oldKeyCount");
@@ -300,7 +298,31 @@ namespace t2
 
       JsonWriteStartObject(msg);
 
-      JsonWriteKeyName(msg, "key");
+      bool emitKeyAsFilePath = false;
+
+      if (component.m_Kind != HashComponent::kGeneric)
+      {
+        JsonWriteKeyName(msg, "kind");
+        switch(component.m_Kind)
+        {
+          case HashComponent::kFilePath:
+            JsonWriteValueString(msg, "path");
+            break;
+          case HashComponent::kFileSHA1:
+            JsonWriteValueString(msg, "sha1");
+            emitKeyAsFilePath = true;
+            break;
+          case HashComponent::kFileTimestamp:
+            JsonWriteValueString(msg, "timestamp");
+            emitKeyAsFilePath = true;
+            break;
+          default:
+            JsonWriteValueString(msg, "unknown");
+            break;
+        }
+      }
+
+      JsonWriteKeyName(msg, emitKeyAsFilePath ? "path" : "key");
       JsonWriteValueString(msg, key);
 
       JsonWriteKeyName(msg, "value");
@@ -369,13 +391,13 @@ namespace t2
     HashSetLogComponents(&sighash, hashComponentLog);
 
     // Start with command line action. If that changes, we'll definitely have to rebuild.
-    HashSetNextComponent(&sighash, "Action", true);
+    HashSetNextComponent(&sighash, HashComponent::kGeneric, "Action", true);
     HashAddString(&sighash, node_data->m_Action);
     HashAddSeparator(&sighash);
 
     if (const char* pre_action = node_data->m_PreAction)
     {
-      HashSetNextComponent(&sighash, "PreAction", true);
+      HashSetNextComponent(&sighash, HashComponent::kGeneric, "PreAction", true);
       HashAddString(&sighash, pre_action);
       HashAddSeparator(&sighash);
     }
@@ -385,7 +407,7 @@ namespace t2
     for (const FrozenFileAndHash& input : node_data->m_InputFiles)
     {
       // Add path and timestamp of every direct input file.
-      HashSetNextComponent(&sighash, input.m_Filename, true);
+      HashSetNextComponent(&sighash, HashComponent::kFilePath, "Input file", true);
       HashAddPath(&sighash, input.m_Filename);
       ComputeFileSignature(&sighash, stat_cache, digest_cache, input.m_Filename, input.m_FilenameHash, config.m_ShaDigestExtensions, config.m_ShaDigestExtensionCount);
 
@@ -409,7 +431,7 @@ namespace t2
           {
             // Add path and timestamp of every indirect input file (#includes)
             const FileAndHash& path = scan_output.m_IncludedFiles[i];
-            HashSetNextComponent(&sighash, path.m_Filename, true);
+            HashSetNextComponent(&sighash, HashComponent::kFilePath, "Indirect input file", true);
             HashAddPath(&sighash, path.m_Filename);
             ComputeFileSignature(&sighash, stat_cache, digest_cache, path.m_Filename, path.m_FilenameHash, config.m_ShaDigestExtensions, config.m_ShaDigestExtensionCount);
           }
@@ -419,11 +441,11 @@ namespace t2
 
     for (const FrozenString& input : node_data->m_AllowedOutputSubstrings)
     {
-      HashSetNextComponent(&sighash, "AllowedOutputSubstring", true);
+      HashSetNextComponent(&sighash, HashComponent::kGeneric, "AllowedOutputSubstring", true);
       HashAddString(&sighash, (const char*)input);
     }
 
-    HashSetNextComponent(&sighash, "AllowUnexpectedOutput", false);
+    HashSetNextComponent(&sighash, HashComponent::kGeneric, "AllowUnexpectedOutput", false);
     HashAddInteger(&sighash, (node_data->m_Flags & NodeData::kFlagAllowUnexpectedOutput) ? 1 : 0);
 
     HashFinalize(&sighash, &node->m_InputSignature);

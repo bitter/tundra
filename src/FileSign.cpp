@@ -11,9 +11,7 @@ namespace t2
 
 static void ComputeFileSignatureSha1(HashState* state, StatCache* stat_cache, DigestCache* digest_cache, const char* filename, uint32_t fn_hash)
 {
-  char* hashComponentName = (char*)alloca(strlen(filename) + 20);
-  sprintf(hashComponentName, "%s SHA1", filename);
-  HashSetNextComponent(state, hashComponentName, false);
+  HashSetNextComponent(state, HashComponent::kFileSHA1, filename, false);
 
   FileInfo file_info = StatCacheStat(stat_cache, filename, fn_hash);
 
@@ -32,7 +30,7 @@ static void ComputeFileSignatureSha1(HashState* state, StatCache* stat_cache, Di
     FILE* f = fopen(filename, "rb");
     if (!f)
     {
-      HashSetNextComponent(state, hashComponentName, true);
+      HashSetNextComponent(state, HashComponent::kFileSHA1, filename, true);
       HashAddString(state, "<missing>");
       return;
     }
@@ -60,9 +58,7 @@ static void ComputeFileSignatureSha1(HashState* state, StatCache* stat_cache, Di
 
 static bool ComputeFileSignatureTimestamp(HashState* out, StatCache* stat_cache, const char* filename, uint32_t hash)
 {
-  char* hashComponentName = (char*)alloca(strlen(filename) + 20);
-  sprintf(hashComponentName, "%s Timestamp", filename);
-  HashSetNextComponent(out, hashComponentName, false);
+  HashSetNextComponent(out, HashComponent::kFileTimestamp, filename, false);
 
   FileInfo info = StatCacheStat(stat_cache, filename, hash);
   if (info.Exists())

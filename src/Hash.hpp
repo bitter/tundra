@@ -155,6 +155,15 @@ struct ALIGN(16) HashStateImpl
 
 struct HashComponent
 {
+  enum Kinds
+  {
+    kGeneric,
+    kFilePath,
+    kFileTimestamp,
+    kFileSHA1
+  };
+
+  Kinds m_Kind;
   uint32_t m_Key;
   uint32_t m_Value;
 };
@@ -179,6 +188,7 @@ struct ALIGN(16) HashState
   
   HashComponentLog* m_ComponentLog;
   const char*   m_NextComponentName;
+  HashComponent::Kinds m_NextComponentKind;
   bool          m_NextComponentIsString;
   size_t        m_LastComponentIndex;
   size_t        m_ComponentCount;
@@ -193,7 +203,7 @@ void HashInitDebug(HashState* h, void* file_handle);
 // Install a log target for hash components, to record the values that the hash was actually calculated from
 void HashSetLogComponents(HashState* h, HashComponentLog* componentLog);
 
-void HashSetNextComponent(HashState* h, const char* name, bool isString);
+void HashSetNextComponent(HashState* h, HashComponent::Kinds kind, const char* name, bool isString);
 
 // Add arbitrary data to be hashed.
 void HashUpdate(HashState* h, const void* data, size_t size);

@@ -54,6 +54,7 @@ void HashUpdate(HashState* self, const void *data_in, size_t size)
   {
     // Log this component
     HashComponent c;
+    c.m_Kind = self->m_NextComponentKind;
     c.m_Key = self->m_ComponentLog->strings.m_Size;
     BufferAppend(&self->m_ComponentLog->strings, self->m_ComponentLog->heap, self->m_NextComponentName, strlen(self->m_NextComponentName) + 1);
 
@@ -150,9 +151,10 @@ void HashSetLogComponents(HashState* self, HashComponentLog* componentLog)
   self->m_LastComponentIndex = 0;
 }
 
-void HashSetNextComponent(HashState* self, const char* name, bool isString)
+void HashSetNextComponent(HashState* self, HashComponent::Kinds kind, const char* name, bool isString)
 {
   self->m_NextComponentName = name;
+  self->m_NextComponentKind = kind;
   self->m_NextComponentIsString = isString;
 }
 

@@ -190,8 +190,6 @@ struct ALIGN(16) HashState
   const char*   m_NextComponentName;
   HashComponent::Kinds m_NextComponentKind;
   bool          m_NextComponentIsString;
-  size_t        m_LastComponentIndex;
-  size_t        m_ComponentCount;
 };
 
 // Initialize hashing state.

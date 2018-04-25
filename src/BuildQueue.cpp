@@ -391,6 +391,9 @@ namespace t2
     // will mean hashing twice, but that would probably still be faster on average).
     HashSetLogComponents(&sighash, component_log);
 
+    node->m_FirstInputSignatureComponentIndex = component_log->components.m_Size;
+
+
     // Start with command line action. If that changes, we'll definitely have to rebuild.
     HashSetNextComponent(&sighash, HashComponent::kGeneric, "Action", true);
     HashAddString(&sighash, node_data->m_Action);
@@ -451,8 +454,7 @@ namespace t2
 
     HashFinalize(&sighash, &node->m_InputSignature);
 
-    node->m_TotalInputSignatureComponents = sighash.m_ComponentCount;
-    node->m_FirstInputSignatureComponentIndex = sighash.m_LastComponentIndex + 1 - sighash.m_ComponentCount;
+    node->m_TotalInputSignatureComponents = component_log->components.m_Size - node->m_FirstInputSignatureComponentIndex;
       
     if (component_log)
       MutexUnlock(&component_log->mutex);

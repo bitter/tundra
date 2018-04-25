@@ -79,9 +79,6 @@ void HashUpdate(HashState* self, const void *data_in, size_t size)
 
     BufferAppendOne(&self->m_ComponentLog->components, self->m_ComponentLog->heap, c);
 
-    self->m_ComponentCount++;
-    self->m_LastComponentIndex = self->m_ComponentLog->components.m_Size - 1;
-
     self->m_NextComponentName = nullptr;
   }
 }
@@ -147,8 +144,6 @@ void HashInitDebug(HashState* self, void* fh)
 void HashSetLogComponents(HashState* self, HashComponentLog* componentLog)
 {
   self->m_ComponentLog = componentLog;
-  self->m_ComponentCount = 0;
-  self->m_LastComponentIndex = 0;
 }
 
 void HashSetNextComponent(HashState* self, HashComponent::Kinds kind, const char* name, bool isString)

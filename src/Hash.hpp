@@ -178,6 +178,12 @@ struct HashComponentLog
   Mutex mutex;
 };
 
+struct HashComponentLogRange
+{
+  uint32_t m_Index;
+  uint32_t m_Count;
+};
+
 struct ALIGN(16) HashState
 {
   HashStateImpl m_StateImpl;

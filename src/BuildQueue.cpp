@@ -267,12 +267,12 @@ namespace t2
     JsonWriteKeyName(msg, "annotation");
     JsonWriteValueString(msg, node->m_MmapData->m_Annotation.Get());
 
-    if (prev_state->m_InputSignatureComponents.GetCount() != node->m_TotalInputSignatureComponents)
+    if (prev_state->m_InputSignatureComponents.GetCount() != node->m_ComponentLogRange.m_Count)
     {
       JsonWriteKeyName(msg, "oldKeyCount");
       JsonWriteValueInteger(msg, prev_state->m_InputSignatureComponents.GetCount());
       JsonWriteKeyName(msg, "newKeyCount");
-      JsonWriteValueInteger(msg, node->m_TotalInputSignatureComponents);
+      JsonWriteValueInteger(msg, node->m_ComponentLogRange.m_Count);
       goto endObjectAndLog;
     }
     
@@ -281,9 +281,9 @@ namespace t2
     JsonWriteKeyName(msg, "changes");
     JsonWriteStartArray(msg);
 
-    for (int i = 0; i < node->m_TotalInputSignatureComponents; ++i)
+    for (int i = 0; i < node->m_ComponentLogRange.m_Count; ++i)
     {
-      HashComponent& component = hashComponentLog->components[node->m_FirstInputSignatureComponentIndex + i];
+      HashComponent& component = hashComponentLog->components[node->m_ComponentLogRange.m_Index + i];
 
       const char* key = &hashComponentLog->strings[component.m_Key];
       const char* prevKey = prev_state->m_InputSignatureComponents[i].m_Key.Get();
@@ -391,7 +391,7 @@ namespace t2
     // will mean hashing twice, but that would probably still be faster on average).
     HashSetLogComponents(&sighash, component_log);
 
-    node->m_FirstInputSignatureComponentIndex = component_log->components.m_Size;
+    node->m_ComponentLogRange.m_Index = component_log->components.m_Size;
 
 
     // Start with command line action. If that changes, we'll definitely have to rebuild.
@@ -454,7 +454,7 @@ namespace t2
 
     HashFinalize(&sighash, &node->m_InputSignature);
 
-    node->m_TotalInputSignatureComponents = component_log->components.m_Size - node->m_FirstInputSignatureComponentIndex;
+    node->m_ComponentLogRange.m_Count = component_log->components.m_Size - node->m_ComponentLogRange.m_Index;
       
     if (component_log)
       MutexUnlock(&component_log->mutex);

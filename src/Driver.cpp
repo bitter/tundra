@@ -992,13 +992,13 @@ bool DriverSaveBuildState(Driver* self)
     BinarySegmentWriteUint32(state_seg, (uint32_t)now/millisecondsInADay);
   };
 
-  auto save_node_signature_components_live = [=](const int32_t firstSignatureComponent, const int32_t signatureComponentsCount) -> void
+  auto save_node_signature_components_live = [=](const HashComponentLogRange& range) -> void
   {
-    BinarySegmentWriteInt32(state_seg, signatureComponentsCount);
+    BinarySegmentWriteInt32(state_seg, range.m_Count);
     BinarySegmentWritePointer(state_seg, BinarySegmentPosition(array_seg));
-    for (int32_t i = 0; i < signatureComponentsCount; ++i)
+    for (int32_t i = 0; i < range.m_Count; ++i)
     {
-      HashComponent& component = self->m_InputSignatureComponents.components[firstSignatureComponent + i];
+      HashComponent& component = self->m_InputSignatureComponents.components[range.m_Index + i];
       BinarySegmentWritePointer(array_seg, BinarySegmentPosition(string_seg));
       BinarySegmentWriteStringData(string_seg, &self->m_InputSignatureComponents.strings[component.m_Key]);
       BinarySegmentWritePointer(array_seg, BinarySegmentPosition(string_seg));
@@ -1072,7 +1072,7 @@ bool DriverSaveBuildState(Driver* self)
     else
     {
       save_node_state(elem->m_BuildResult, &elem->m_InputSignature, src_elem, guid);
-      save_node_signature_components_live(elem->m_FirstInputSignatureComponentIndex, elem->m_TotalInputSignatureComponents);
+      save_node_signature_components_live(elem->m_ComponentLogRange);
       ++entry_count;
       ++g_Stats.m_StateSaveNew;
     }

@@ -47,8 +47,7 @@ struct NodeState
   const char**              m_ImplicitDeps;
 
   HashDigest                m_InputSignature;
-  uint32_t                  m_FirstInputSignatureComponentIndex;
-  uint32_t                  m_TotalInputSignatureComponents;
+  HashComponentLogRange     m_ComponentLogRange;
 };
 
 inline bool NodeStateIsCompleted(const NodeState* state)

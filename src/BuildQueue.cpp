@@ -385,24 +385,15 @@ namespace t2
       HashInit(&sighash);
     }
 
-    // TODO: In most cases we already have the components in the buildstate and the signature hasn't changed,
-    // which makes logging the components unnecessary. Would be nicer if we could void logging the hash
-    // components unless a) the buildstate doesn't have them or b) the signature has actually changed (which 
-    // will mean hashing twice, but that would probably still be faster on average).
-    HashSetLogComponents(&sighash, component_log);
-
     node->m_ComponentLogRange.m_Index = component_log->components.m_Size;
 
-
     // Start with command line action. If that changes, we'll definitely have to rebuild.
-    HashSetNextComponent(&sighash, HashComponent::kGeneric, "Action", true);
-    HashAddString(&sighash, node_data->m_Action);
+    HashAddStringLogged(&sighash, node_data->m_Action, component_log, HashComponent::kGeneric, "Action");
     HashAddSeparator(&sighash);
 
     if (const char* pre_action = node_data->m_PreAction)
     {
-      HashSetNextComponent(&sighash, HashComponent::kGeneric, "PreAction", true);
-      HashAddString(&sighash, pre_action);
+      HashAddStringLogged(&sighash, pre_action, component_log, HashComponent::kGeneric, "PreAction");
       HashAddSeparator(&sighash);
     }
 
@@ -411,9 +402,8 @@ namespace t2
     for (const FrozenFileAndHash& input : node_data->m_InputFiles)
     {
       // Add path and timestamp of every direct input file.
-      HashSetNextComponent(&sighash, HashComponent::kFilePath, "Input file", true);
-      HashAddPath(&sighash, input.m_Filename);
-      ComputeFileSignature(&sighash, stat_cache, digest_cache, input.m_Filename, input.m_FilenameHash, config.m_ShaDigestExtensions, config.m_ShaDigestExtensionCount);
+      HashAddPathLogged(&sighash, input.m_Filename, component_log);
+      ComputeFileSignature(&sighash, stat_cache, digest_cache, input.m_Filename, input.m_FilenameHash, config.m_ShaDigestExtensions, config.m_ShaDigestExtensionCount, component_log);
 
       if (scanner)
       {
@@ -435,9 +425,8 @@ namespace t2
           {
             // Add path and timestamp of every indirect input file (#includes)
             const FileAndHash& path = scan_output.m_IncludedFiles[i];
-            HashSetNextComponent(&sighash, HashComponent::kFilePath, "Indirect input file", true);
-            HashAddPath(&sighash, path.m_Filename);
-            ComputeFileSignature(&sighash, stat_cache, digest_cache, path.m_Filename, path.m_FilenameHash, config.m_ShaDigestExtensions, config.m_ShaDigestExtensionCount);
+            HashAddPathLogged(&sighash, path.m_Filename, component_log);
+            ComputeFileSignature(&sighash, stat_cache, digest_cache, path.m_Filename, path.m_FilenameHash, config.m_ShaDigestExtensions, config.m_ShaDigestExtensionCount, component_log);
           }
         }
       }
@@ -445,12 +434,10 @@ namespace t2
 
     for (const FrozenString& input : node_data->m_AllowedOutputSubstrings)
     {
-      HashSetNextComponent(&sighash, HashComponent::kGeneric, "AllowedOutputSubstring", true);
-      HashAddString(&sighash, (const char*)input);
+      HashAddStringLogged(&sighash, (const char*)input, component_log, HashComponent::kGeneric, "AllowedOutputSubstring");
     }
 
-    HashSetNextComponent(&sighash, HashComponent::kGeneric, "AllowUnexpectedOutput", false);
-    HashAddInteger(&sighash, (node_data->m_Flags & NodeData::kFlagAllowUnexpectedOutput) ? 1 : 0);
+    HashAddIntegerLogged(&sighash, (node_data->m_Flags & NodeData::kFlagAllowUnexpectedOutput) ? 1 : 0, component_log, HashComponent::kGeneric, "AllowUnexpectedOutput");
 
     HashFinalize(&sighash, &node->m_InputSignature);
 

@@ -191,11 +191,6 @@ struct ALIGN(16) HashState
   size_t        m_BufUsed;
   uint8_t       m_Buffer[64];
   void*         m_DebugFile;
-  
-  HashComponentLog* m_ComponentLog;
-  const char*   m_NextComponentName;
-  HashComponent::Kinds m_NextComponentKind;
-  bool          m_NextComponentIsString;
 };
 
 // Initialize hashing state.
@@ -204,13 +199,10 @@ void HashInit(HashState* h);
 // Initialize hashing state, appending debug data to a file.
 void HashInitDebug(HashState* h, void* file_handle);
 
-// Install a log target for hash components, to record the values that the hash was actually calculated from
-void HashSetLogComponents(HashState* h, HashComponentLog* componentLog);
-
-void HashSetNextComponent(HashState* h, HashComponent::Kinds kind, const char* name, bool isString);
-
 // Add arbitrary data to be hashed.
 void HashUpdate(HashState* h, const void* data, size_t size);
+
+void HashUpdateLogged(HashState* h, const void* data, size_t size, HashComponentLog* log, HashComponent::Kinds kind, const char* key, bool isString);
 
 // Add string data to be hashed.
 inline void HashAddString(HashState* self, const char* s)
@@ -218,7 +210,15 @@ inline void HashAddString(HashState* self, const char* s)
   HashUpdate(self, s, strlen(s));
 }
 
+inline void HashAddStringLogged(HashState* self, const char* s, HashComponentLog* log, HashComponent::Kinds kind, const char* key)
+{
+  HashUpdateLogged(self, s, strlen(s), log, kind, key, true);
+}
+
 void HashAddStringFoldCase(HashState* self, const char* path);
+
+void HashAddStringFoldCaseLogged(HashState* self, const char* path, HashComponentLog* log, HashComponent::Kinds kind, const char* key);
+
 
 inline void HashAddPath(HashState* self, const char* path)
 {
@@ -229,8 +229,20 @@ inline void HashAddPath(HashState* self, const char* path)
 #endif
 }
 
+inline void HashAddPathLogged(HashState* self, const char* path, HashComponentLog* log)
+{
+  const char* pathKey = "Path";
+#if ENABLED(TUNDRA_CASE_INSENSITIVE_FILESYSTEM)
+  HashAddStringFoldCaseLogged(self, path, log, HashComponent::kFilePath, pathKey);
+#else
+  HashAddStringLogged(self, path, log, HashComponent::kFilePath, pathKey);  
+#endif
+}
+
 // Add binary integer data to be hashed.
 void HashAddInteger(HashState* h, uint64_t value);
+
+void HashAddIntegerLogged(HashState* h, uint64_t value, HashComponentLog* log, HashComponent::Kinds kind, const char* key);
 
 // Add a separator (zero byte) to keep runs of separate data apart.
 void HashAddSeparator(HashState* h);

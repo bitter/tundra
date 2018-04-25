@@ -63,32 +63,29 @@ void HashUpdate(HashState* self, const void *data_in, size_t size)
   
   self->m_BufUsed  = used;
   self->m_MsgSize += size * 8;
+}
 
-  if (self->m_ComponentLog != nullptr && self->m_NextComponentName != nullptr)
+void HashUpdateLogged(HashState* self, const void* data_in, size_t size, HashComponentLog* log, HashComponent::Kinds kind, const char* key, bool dataIsString)
+{
+  HashUpdate(self, data_in, size);
+  
+  if (dataIsString)
+    AddToHashLog(log, kind, key, reinterpret_cast<const char*>(data_in));
+  else
   {
-    char* valueStr;
-    if (self->m_NextComponentIsString)
+    char* valueStr = (char*)alloca(3 + size*2);
+    const char* hexBytes = "0123456789ABCDEF";
+    valueStr[0] = '0';
+    valueStr[1] = 'x';
+    for (size_t i = 0; i < size; ++i)
     {
-      AddToHashLog(self->m_ComponentLog, self->m_NextComponentKind, self->m_NextComponentName, reinterpret_cast<const char*>(data));
+      uint8_t byte = ((uint8_t*)data_in)[i];
+      valueStr[2 + i*2] = hexBytes[byte >> 4];
+      valueStr[2 + i*2 + 1] = hexBytes[byte & 0x0F];
     }
-    else
-    {
-      char* valueStr = (char*)alloca(3 + size*2);
-      const char* hexBytes = "0123456789ABCDEF";
-      valueStr[0] = '0';
-      valueStr[1] = 'x';
-      for (size_t i = 0; i < size; ++i)
-      {
-        uint8_t byte = ((uint8_t*)data_in)[i];
-        valueStr[2 + i*2] = hexBytes[byte >> 4];
-        valueStr[2 + i*2 + 1] = hexBytes[byte & 0x0F];
-      }
-      valueStr[2 + size*2] = 0;
+    valueStr[2 + size*2] = 0;
 
-      AddToHashLog(self->m_ComponentLog, self->m_NextComponentKind, self->m_NextComponentName, valueStr);
-    }
-
-    self->m_NextComponentName = nullptr;
+    AddToHashLog(log, kind, key, valueStr);
   }
 }
 
@@ -103,18 +100,55 @@ void HashSingleString(HashDigest* digest_out, const char* string)
 
 void HashAddStringFoldCase(HashState* self, const char* path)
 {
-  const size_t strLength = strlen(path);
-
-  char* foldedCase = (char*)alloca(strLength);
-  for (size_t i = 0; i < strLength; ++i)
-    foldedCase[i] = FoldCase(path[i]);
-
-  HashUpdate(self, foldedCase, strLength);
+  while (true)
+  {
+    char c = *path++;
+    if (c == 0)
+      return;
+      c = FoldCase(c);
+      HashUpdate(self, &c, 1);
+  }
 }
 
-void HashAddInteger(HashState* self, uint64_t value)
+void HashAddStringFoldCaseLogged(HashState* self, const char* path, HashComponentLog* log, HashComponent::Kinds kind, const char* key)
 {
-  uint8_t bytes[8];
+  const size_t kFixedBufferSize = 1024;
+  char buf[kFixedBufferSize];
+  char* target = buf;
+  size_t length = 0;
+
+  do
+  {
+    char c = FoldCase(*path);
+    target[length] = c;
+    if (c == 0)
+      break;
+
+    ++path;
+    ++length;
+  } while(length < kFixedBufferSize);
+
+  if (length < kFixedBufferSize)
+  {
+    HashAddStringLogged(self, buf, log, kind, key);
+    return;
+  }
+
+  // The string must not have fit into the buffer. Measure how much is left, then allocate a new buffer for the whole
+  // result and finish folding the parts we didn't do already.
+  length = strlen(path) + kFixedBufferSize;
+  target = (char*)alloca(length + 1);
+  memcpy(target, buf, kFixedBufferSize);
+  for (size_t i = kFixedBufferSize; i <= length; ++i)
+  {
+    target[i] = FoldCase(*path++);
+  }
+
+  HashAddStringLogged(self, target, log, kind, key);
+}
+
+static void UInt64ToBytes(uint64_t value, uint8_t (&bytes)[8])
+{
   bytes[0] = uint8_t(value >> 56);
   bytes[1] = uint8_t(value >> 48);
   bytes[2] = uint8_t(value >> 40);
@@ -123,7 +157,20 @@ void HashAddInteger(HashState* self, uint64_t value)
   bytes[5] = uint8_t(value >> 16);
   bytes[6] = uint8_t(value >>  8);
   bytes[7] = uint8_t(value >>  0);
+}
+
+void HashAddInteger(HashState* self, uint64_t value)
+{
+  uint8_t bytes[8];
+  UInt64ToBytes(value, bytes);
   HashUpdate(self, bytes, sizeof bytes);
+}
+
+void HashAddIntegerLogged(HashState* self, uint64_t value, HashComponentLog* log, HashComponent::Kinds kind, const char* key)
+{
+  uint8_t bytes[8];
+  UInt64ToBytes(value, bytes);
+  HashUpdateLogged(self, bytes, sizeof bytes, log, kind, key, false);
 }
 
 void HashAddSeparator(HashState* self)
@@ -137,7 +184,6 @@ void HashInit(HashState* self)
   self->m_MsgSize = 0;
   self->m_BufUsed = 0;
   self->m_DebugFile = nullptr;
-  self->m_ComponentLog = 0;
   HashInitImpl(&self->m_StateImpl);
 }
 
@@ -146,20 +192,7 @@ void HashInitDebug(HashState* self, void* fh)
   self->m_MsgSize = 0;
   self->m_BufUsed = 0;
   self->m_DebugFile = fh;
-  self->m_ComponentLog = 0;
   HashInitImpl(&self->m_StateImpl);
-}
-
-void HashSetLogComponents(HashState* self, HashComponentLog* componentLog)
-{
-  self->m_ComponentLog = componentLog;
-}
-
-void HashSetNextComponent(HashState* self, HashComponent::Kinds kind, const char* name, bool isString)
-{
-  self->m_NextComponentName = name;
-  self->m_NextComponentKind = kind;
-  self->m_NextComponentIsString = isString;
 }
 
 void HashFinalize(HashState* self, HashDigest* digest)

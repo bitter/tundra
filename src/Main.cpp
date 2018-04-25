@@ -447,6 +447,8 @@ int main(int argc, char* argv[])
     goto leave;
   }
 
+  DriverReportStartup(&driver, (const char**) argv, argc);
+
   //we dont remove stale outputs for now, as buildstate is shared between multiple dags. at some point
   //we should implement deleting artifacts when we drop old nodes from the buildstate
   //DriverRemoveStaleOutputs(&driver);

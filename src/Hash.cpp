@@ -13,6 +13,20 @@ void HashInitImpl(HashStateImpl* impl);
 void HashBlock(const uint8_t* data, HashStateImpl* state, void* debug_file);
 void HashFinalizeImpl(HashStateImpl* self, HashDigest* digest);
 
+static void AddToHashLog(HashComponentLog* log, HashComponent::Kinds kind, const char* key, const char* value)
+{
+  HashComponent c;
+  c.m_Kind = kind;
+
+  c.m_Key = log->strings.m_Size;
+  BufferAppend(&log->strings, log->heap, key, strlen(key) + 1);
+
+  c.m_Value = log->strings.m_Size;
+  BufferAppend(&log->strings, log->heap, value, strlen(value) + 1);
+
+  BufferAppendOne(&log->components, log->heap, c);
+}
+
 void HashUpdate(HashState* self, const void *data_in, size_t size)
 {
   const uint8_t*       data   = static_cast<const uint8_t*>(data_in);
@@ -52,32 +66,27 @@ void HashUpdate(HashState* self, const void *data_in, size_t size)
 
   if (self->m_ComponentLog != nullptr && self->m_NextComponentName != nullptr)
   {
-    // Log this component
-    HashComponent c;
-    c.m_Kind = self->m_NextComponentKind;
-    c.m_Key = self->m_ComponentLog->strings.m_Size;
-    BufferAppend(&self->m_ComponentLog->strings, self->m_ComponentLog->heap, self->m_NextComponentName, strlen(self->m_NextComponentName) + 1);
-
-    c.m_Value = self->m_ComponentLog->strings.m_Size;
+    char* valueStr;
     if (self->m_NextComponentIsString)
     {
-      BufferAppend(&self->m_ComponentLog->strings, self->m_ComponentLog->heap, (const char*)data_in, size);
-      BufferAppendOne(&self->m_ComponentLog->strings, self->m_ComponentLog->heap, 0);
+      AddToHashLog(self->m_ComponentLog, self->m_NextComponentKind, self->m_NextComponentName, reinterpret_cast<const char*>(data));
     }
     else
     {
+      char* valueStr = (char*)alloca(3 + size*2);
       const char* hexBytes = "0123456789ABCDEF";
-      BufferAppend(&self->m_ComponentLog->strings, self->m_ComponentLog->heap, "0x", 2);
+      valueStr[0] = '0';
+      valueStr[1] = 'x';
       for (size_t i = 0; i < size; ++i)
       {
         uint8_t byte = ((uint8_t*)data_in)[i];
-        BufferAppendOne(&self->m_ComponentLog->strings, self->m_ComponentLog->heap, hexBytes[byte >> 4]);
-        BufferAppendOne(&self->m_ComponentLog->strings, self->m_ComponentLog->heap, hexBytes[byte & 0x0F]);
+        valueStr[2 + i*2] = hexBytes[byte >> 4];
+        valueStr[2 + i*2 + 1] = hexBytes[byte & 0x0F];
       }
-      BufferAppendOne(&self->m_ComponentLog->strings, self->m_ComponentLog->heap, 0);
-    }
+      valueStr[2 + size*2] = 0;
 
-    BufferAppendOne(&self->m_ComponentLog->components, self->m_ComponentLog->heap, c);
+      AddToHashLog(self->m_ComponentLog, self->m_NextComponentKind, self->m_NextComponentName, valueStr);
+    }
 
     self->m_NextComponentName = nullptr;
   }

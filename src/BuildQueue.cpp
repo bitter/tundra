@@ -352,7 +352,7 @@ namespace t2
     LogStructured(msg);
   }
     
-  static BuildProgress::Enum CheckInputSignature(BuildQueue* queue, ThreadState* thread_state, NodeState* node, Mutex* queue_lock, HashComponentLog* hashComponentLog)
+  static BuildProgress::Enum CheckInputSignature(BuildQueue* queue, ThreadState* thread_state, NodeState* node, Mutex* queue_lock)
   {
     CHECK(AllDependenciesReady(queue, node));
 
@@ -361,6 +361,7 @@ namespace t2
     const BuildQueueConfig& config = queue->m_Config;
     StatCache* stat_cache = config.m_StatCache;
     DigestCache* digest_cache = config.m_DigestCache;
+    HashComponentLog* component_log = config.m_InputSignatureHashLog;
 
     const NodeData* node_data = node->m_MmapData;
 
@@ -370,8 +371,8 @@ namespace t2
     // TODO: Give each BuildQueue thread a separate hashComponentLog so that we don't need the mutex.
     // As long as they're all around when we're saving the build state, and we know which log to use
     // for each node, we can just pull the values from each thread's log instance as we go along.
-    if (hashComponentLog)
-      MutexLock(&hashComponentLog->mutex);
+    if (component_log)
+      MutexLock(&component_log->mutex);
 
     if (debug_log)
     {
@@ -388,7 +389,7 @@ namespace t2
     // which makes logging the components unnecessary. Would be nicer if we could void logging the hash
     // components unless a) the buildstate doesn't have them or b) the signature has actually changed (which 
     // will mean hashing twice, but that would probably still be faster on average).
-    HashSetLogComponents(&sighash, hashComponentLog);
+    HashSetLogComponents(&sighash, component_log);
 
     // Start with command line action. If that changes, we'll definitely have to rebuild.
     HashSetNextComponent(&sighash, HashComponent::kGeneric, "Action", true);
@@ -453,8 +454,8 @@ namespace t2
     node->m_TotalInputSignatureComponents = sighash.m_ComponentCount;
     node->m_FirstInputSignatureComponentIndex = sighash.m_LastComponentIndex + 1 - sighash.m_ComponentCount;
       
-    if (hashComponentLog)
-      MutexUnlock(&hashComponentLog->mutex);
+    if (component_log)
+      MutexUnlock(&component_log->mutex);
 
     if (debug_log)
     {
@@ -497,8 +498,8 @@ namespace t2
 
       Log(kSpam, "T=%d: building %s - input signature changed. was:%s now:%s", thread_state->m_ThreadIndex, node_data->m_Annotation.Get(), oldDigest, newDigest);
 
-      if (hashComponentLog != nullptr)
-        ReportInputSignatureChangeCause(&thread_state->m_StructuredMsg, node, prev_state, hashComponentLog);
+      if (component_log != nullptr)
+        ReportInputSignatureChangeCause(&thread_state->m_StructuredMsg, node, prev_state, component_log);
 
       next_state = BuildProgress::kRunAction;
     }
@@ -739,7 +740,7 @@ namespace t2
       WakeWaiters(queue, enqueue_count);
   }
 
-  static void AdvanceNode(BuildQueue* queue, ThreadState* thread_state, NodeState* node, Mutex* queue_lock, HashComponentLog* inputSignatureHashLog)
+  static void AdvanceNode(BuildQueue* queue, ThreadState* thread_state, NodeState* node, Mutex* queue_lock)
   {
     Log(kSpam, "T=%d, [%d] Advancing %s\n",
         thread_state->m_ThreadIndex, node->m_Progress, node->m_MmapData->m_Annotation.Get());
@@ -770,7 +771,7 @@ namespace t2
           break;
 
         case BuildProgress::kUnblocked:
-          node->m_Progress = CheckInputSignature(queue, thread_state, node, queue_lock, inputSignatureHashLog);
+          node->m_Progress = CheckInputSignature(queue, thread_state, node, queue_lock);
           break;
 
         case BuildProgress::kRunAction:
@@ -889,7 +890,7 @@ namespace t2
     {
       if (NodeState* node = NextNode(queue))
       {
-        AdvanceNode(queue, thread_state, node, mutex, queue->m_Config.m_InputSignatureHashLog);
+        AdvanceNode(queue, thread_state, node, mutex);
       }
       else
       {

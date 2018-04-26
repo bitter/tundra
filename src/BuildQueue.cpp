@@ -366,7 +366,7 @@ namespace t2
     HashComponentLog* component_log = config.m_InputSignatureHashLog;
 
     const NodeData* node_data = node->m_MmapData;
-    const uint64_t node_index = (node_data - queue->m_Config.m_NodeData);
+    const uint64_t node_index = node_data->m_OriginalIndex;
 
     HashState sighash;
     FILE* debug_log = (FILE*) queue->m_Config.m_FileSigningLog;

@@ -441,7 +441,7 @@ ExecResult ExecuteProcess(
   {
     HANDLE handles_to_enherit[2] = { 0,0 };
     sinfo.StartupInfo.hStdOutput = sinfo.StartupInfo.hStdError = handles_to_enherit[0] = GetOrCreateTempFileFor(job_id);
-    sinfo.StartupInfo.hStdInput = handles_to_enherit[1] = GetStdHandle(STD_INPUT_HANDLE);
+    sinfo.StartupInfo.hStdInput = /* handles_to_enherit[1] = */ GetStdHandle(STD_INPUT_HANDLE);  // Inheriting stdin fails on Windows 7 with Win32 error 1450
     sinfo.StartupInfo.dwFlags |= STARTF_USESTDHANDLES;
     creationFlags |= EXTENDED_STARTUPINFO_PRESENT;
 

@@ -891,7 +891,7 @@ namespace t2
     {
       Log(kSpam, "Launching pre-action process");
       TimingScope timing_scope(&g_Stats.m_ExecCount, &g_Stats.m_ExecTimeCycles);
-      ProfilerScope prof_scope("Pre-build", job_id);
+      ProfilerScope prof_scope("Pre-build", job_id, node->m_MmapData->m_OriginalIndex);
       last_cmd_line = pre_cmd_line;
       result = ExecuteProcess(pre_cmd_line, env_count, env_vars, thread_state->m_Queue->m_Config.m_Heap, job_id, false, SlowCallback, &slowCallbackData, 1);
       Log(kSpam, "Process return code %d", result.m_ReturnCode);
@@ -902,13 +902,13 @@ namespace t2
     {
       Log(kSpam, "Launching process");
       TimingScope timing_scope(&g_Stats.m_ExecCount, &g_Stats.m_ExecTimeCycles);
-      ProfilerScope prof_scope(annotation, job_id);
+      ProfilerScope prof_scope(annotation, job_id, node->m_MmapData->m_OriginalIndex);
       if (isWriteFileAction)
         result = WriteTextFile(node_data->m_Action, node_data->m_OutputFiles[0].m_Filename, thread_state->m_Queue->m_Config.m_Heap);
       else
       {
         last_cmd_line = cmd_line;
-        result = ExecuteProcess(cmd_line, env_count, env_vars, thread_state->m_Queue->m_Config.m_Heap, job_id, false, SlowCallback, &slowCallbackData);
+        result = ExecuteProcess(cmd_line, env_count, env_vars, thread_state->m_Queue->m_Config.m_Heap, job_id, false, SlowCallback, &slowCallbackData, 1, prof_scope.m_Evt ? &prof_scope.m_Evt->m_PID : nullptr);
         passedOutputValidation = ValidateExecResultAgainstAllowedOutput(&result, node_data);
       }
       Log(kSpam, "Process return code %d", result.m_ReturnCode);

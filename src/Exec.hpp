@@ -3,6 +3,7 @@
 
 #include "stddef.h"
 #include <thread>
+#include "Config.hpp"
 
 namespace t2
 {
@@ -38,16 +39,23 @@ namespace t2
   void ExecInit();
   void EmitOutputBytesToDestination(ExecResult* execResult, const char* text, size_t count);
 
+#if defined(TUNDRA_WIN32)
+  typedef uint32_t TundraPID;
+#else
+  typedef pid_t TundraPID;
+#endif
+
   ExecResult ExecuteProcess(
         const char*         cmd_line,
         int                 env_count,
         const EnvVariable*  env_vars,
         MemAllocHeap*       heap,
         int                 job_id,
-        bool                stream_output_to_stdout,
+        bool                stream_output_to_stdout = false,
         int (*callback_on_slow)(void* user_data) = nullptr,
         void*               callback_on_slow_userdata = nullptr,
-        int                 time_until_first_callback = 1
+        int                 time_until_first_callback = 1,
+        TundraPID*          out_pid = nullptr
         );
 
 }

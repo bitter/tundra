@@ -76,7 +76,8 @@ ExecuteProcess(
 		bool stream_to_stdout,
 		int (*callback_on_slow)(void* user_data),
         void* callback_on_slow_userdata,
-		int time_to_first_slow_callback)
+		int time_to_first_slow_callback,
+    int* out_pid)
 {
   ExecResult result;
 
@@ -158,6 +159,9 @@ ExecuteProcess(
 		int rfd_count = 2;
 		int rfds[2];
 		fd_set read_fds;
+
+    if (out_pid != nullptr)
+      *out_pid = child;
 
 		rfds[0] = stdout_pipe[pipe_read];
 		rfds[1] = stderr_pipe[pipe_read];

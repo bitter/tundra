@@ -423,10 +423,11 @@ ExecResult ExecuteProcess(
   const EnvVariable*  env_vars,
   MemAllocHeap*       heap,
   int                 job_id,
-  bool                stream_to_stdout = false,
+  bool                stream_to_stdout,
   int(*callback_on_slow)(void* user_data),
   void* callback_on_slow_userdata,
-  int                 time_until_first_callback
+  int                 time_until_first_callback,
+  TundraPID*          out_pid
   )
 {
   STARTUPINFOEXW sinfo;
@@ -497,6 +498,9 @@ ExecResult ExecuteProcess(
 
   if (!CreateProcessW(NULL, buffer_wide, NULL, NULL, enherit_handles, creationFlags, env_block_wide, NULL, &sinfo.StartupInfo, &pinfo))
     CroakAbort("ERROR: Couldn't launch process. Win32 error = %d", (int)GetLastError());
+
+  if (out_pid != nullptr)
+    *out_pid = GetProcessId(pinfo.hProcess);
 
   if (!stream_to_stdout)
   {

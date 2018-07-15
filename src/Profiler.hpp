@@ -1,6 +1,9 @@
 #ifndef PROFILER_HPP
 #define PROFILER_HPP
 
+#include <stdint.h>
+#include "Exec.hpp"
+
 namespace t2
 {
   extern bool g_ProfilerEnabled;
@@ -13,16 +16,25 @@ namespace t2
   // String passed into the event will be copied, and split into "name" and "detail" parts on first
   // space character.
 
+  struct ProfilerEvent
+  {
+    uint64_t    m_Time;
+    uint64_t    m_Duration;
+    const char* m_Name;
+    const char* m_Info;
+    int32_t     m_NodeIndex;
+    TundraPID   m_PID;
+  };
+
   void ProfilerInit(const char* fileName, int threadCount);
   void ProfilerDestroy();
 
-  void ProfilerBeginImpl(const char* name, int threadIndex);
+  ProfilerEvent* ProfilerBeginImpl(const char* name, int threadIndex);
   void ProfilerEndImpl(int threadIndex);
 
-  inline void ProfilerBegin(const char* name, int threadIndex)
+  inline ProfilerEvent* ProfilerBegin(const char* name, int threadIndex)
   {
-    if (g_ProfilerEnabled)
-      ProfilerBeginImpl(name, threadIndex);
+    return (g_ProfilerEnabled) ? ProfilerBeginImpl(name, threadIndex) : nullptr;
   }
 
   inline void ProfilerEnd(int threadIndex)
@@ -34,10 +46,13 @@ namespace t2
   struct ProfilerScope
   {
     int m_ThreadIndex;
-    ProfilerScope(const char* name, int threadIndex)
+    ProfilerEvent* m_Evt;
+    ProfilerScope(const char* name, int threadIndex, int32_t nodeIndex = -1)
     {
       m_ThreadIndex = threadIndex;
-      ProfilerBegin(name, threadIndex);
+      m_Evt = ProfilerBegin(name, threadIndex);
+      if (m_Evt != nullptr)
+        m_Evt->m_NodeIndex = nodeIndex;
     }
 
     ~ProfilerScope()

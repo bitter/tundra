@@ -905,11 +905,12 @@ namespace t2
       ProfilerScope prof_scope(annotation, job_id);
 
       const FrozenArray<FrozenFileAndHash>& outputFiles = node_data->m_OutputFiles;
-      HashState pre_hashstate[MAX_OUTPUT_NODES];
+      uint64_t pre_timestamps[MAX_OUTPUT_NODES];
+
       for (int i = 0; i < outputFiles.GetCount(); i++)
       {
-        HashInit(&(pre_hashstate[i]));
-        ComputeFileSignatureTimestamp(&(pre_hashstate[i]), queue->m_Config.m_StatCache, outputFiles[i].m_Filename, outputFiles[i].m_FilenameHash);
+        FileInfo info = GetFileInfo(outputFiles[i].m_Filename);
+        pre_timestamps[i] = info.m_Timestamp;
       }
 
       if (isWriteFileAction)
@@ -921,21 +922,17 @@ namespace t2
         passedOutputValidation = ValidateExecResultAgainstAllowedOutput(&result, node_data);
       }
 
-      HashState post_hashstate[MAX_OUTPUT_NODES];
-      HashDigest pre_hashdigest[MAX_OUTPUT_NODES];
-      HashDigest post_hashdigest[MAX_OUTPUT_NODES];
       bool bad = false;
 
       for (int i = 0; i < outputFiles.GetCount(); i++)
       {
-        HashInit(&(post_hashstate[i]));
-        ComputeFileSignatureTimestamp(&(post_hashstate[i]), queue->m_Config.m_StatCache, outputFiles[i].m_Filename, outputFiles[i].m_FilenameHash);
-        HashFinalize(&(pre_hashstate[i]), &(pre_hashdigest[i]));
-        HashFinalize(&(post_hashstate[i]), &(post_hashdigest[i]));
-        if (pre_hashdigest[i] == post_hashdigest[i])
+        FileInfo info = GetFileInfo(outputFiles[i].m_Filename);
+
+        if (pre_timestamps[i] == info.m_Timestamp)
         {
           Log(kError, "Error: the %d'th output (which was %s) of %s did not change. Every action must touch all its outputs.",
             i, outputFiles[i].m_Filename.Get(), node_data->m_Annotation.Get());
+
           bad = true;
         }
       }

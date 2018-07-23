@@ -53,7 +53,7 @@ static void ComputeFileSignatureSha1(HashState* state, StatCache* stat_cache, Di
   HashUpdate(state, &digest, sizeof(digest));
 }
 
-static bool ComputeFileSignatureTimestamp(HashState* out, StatCache* stat_cache, const char* filename, uint32_t hash)
+bool ComputeFileSignatureTimestamp(HashState* out, StatCache* stat_cache, const char* filename, uint32_t hash)
 {
   FileInfo info = StatCacheStat(stat_cache, filename, hash);
   if (info.Exists())

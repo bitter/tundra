@@ -889,7 +889,7 @@ namespace t2
     size_t n_outputs = (size_t)node_data->m_OutputFiles.GetCount();
 
     bool* untouched_outputs = (bool*)LinearAllocate(&thread_state->m_ScratchAlloc, n_outputs, (size_t)sizeof(bool));
-    ZeroMemory(untouched_outputs, n_outputs);
+    memset(untouched_outputs, 0, n_outputs * sizeof(bool));
 
     if (pre_cmd_line)
     {

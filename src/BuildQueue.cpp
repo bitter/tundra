@@ -32,7 +32,6 @@ namespace t2
       "build failed to setup error"
     };
   }
-  const int MAX_OUTPUT_NODES = 1024;
 
   static void ThreadStateInit(ThreadState* self, BuildQueue* queue, size_t scratch_size, int index)
   {
@@ -236,7 +235,7 @@ namespace t2
 
     if (info.Exists())
     {
-      // Just asssume this is a directory. We could check it - but there's currently no way via _stat64() calls
+      // Just assume this is a directory. We could check it - but there's currently no way via _stat64() calls
       // on Windows to check if a file is a symbolic link (to a directory).
       return true;
     }
@@ -887,6 +886,11 @@ namespace t2
     slowCallbackData.queue_lock = queue_lock;
     slowCallbackData.build_queue = thread_state->m_Queue;
 
+    size_t n_outputs = (size_t)node_data->m_OutputFiles.GetCount();
+
+    bool* untouched_outputs = (bool*)LinearAllocate(&thread_state->m_ScratchAlloc, n_outputs, (size_t)sizeof(bool));
+    ZeroMemory(untouched_outputs, n_outputs);
+
     if (pre_cmd_line)
     {
       Log(kSpam, "Launching pre-action process");
@@ -904,12 +908,11 @@ namespace t2
       TimingScope timing_scope(&g_Stats.m_ExecCount, &g_Stats.m_ExecTimeCycles);
       ProfilerScope prof_scope(annotation, job_id);
 
-      const FrozenArray<FrozenFileAndHash>& outputFiles = node_data->m_OutputFiles;
-      uint64_t pre_timestamps[MAX_OUTPUT_NODES];
+      uint64_t* pre_timestamps = (uint64_t*)LinearAllocate(&thread_state->m_ScratchAlloc, n_outputs, (size_t)sizeof(uint64_t));
 
-      for (int i = 0; i < outputFiles.GetCount(); i++)
+      for (int i = 0; i < n_outputs; i++)
       {
-        FileInfo info = GetFileInfo(outputFiles[i].m_Filename);
+        FileInfo info = GetFileInfo(node_data->m_OutputFiles[i].m_Filename);
         pre_timestamps[i] = info.m_Timestamp;
       }
 
@@ -918,28 +921,19 @@ namespace t2
       else
       {
         last_cmd_line = cmd_line;
-        result = ExecuteProcess(cmd_line, env_count, env_vars, thread_state->m_Queue->m_Config.m_Heap, job_id, false, SlowCallback, &slowCallbackData);
+        result = ExecuteProcess(cmd_line, env_count, env_vars, thread_state->m_Queue->m_Config.m_Heap, job_id, true, SlowCallback, &slowCallbackData);
         passedOutputValidation = ValidateExecResultAgainstAllowedOutput(&result, node_data);
       }
 
-      bool bad = false;
-
-      for (int i = 0; i < outputFiles.GetCount(); i++)
+      if (passedOutputValidation == ValidationResult::Pass)
       {
-        FileInfo info = GetFileInfo(outputFiles[i].m_Filename);
-
-        if (pre_timestamps[i] == info.m_Timestamp)
+        for (int i = 0; i < n_outputs; i++)
         {
-          Log(kError, "Error: the %d'th output (which was %s) of %s did not change. Every action must touch all its outputs.",
-            i, outputFiles[i].m_Filename.Get(), node_data->m_Annotation.Get());
-
-          bad = true;
+          FileInfo info = GetFileInfo(node_data->m_OutputFiles[i].m_Filename);
+          untouched_outputs[i] = pre_timestamps[i] == info.m_Timestamp;
         }
       }
-      if (bad)
-      {
-        return BuildProgress::kFailed;
-      }
+
       Log(kSpam, "Process return code %d", result.m_ReturnCode);
     }
 
@@ -949,7 +943,7 @@ namespace t2
     }
 
     MutexLock(queue_lock);
-    PrintNodeResult(&result, node_data, last_cmd_line, thread_state->m_Queue, echo_cmdline, time_of_start, passedOutputValidation);
+    PrintNodeResult(&result, node_data, last_cmd_line, thread_state->m_Queue, echo_cmdline, time_of_start, passedOutputValidation, untouched_outputs);
     ExecResultFreeMemory(&result);
 
     if (result.m_WasAborted)
@@ -957,7 +951,7 @@ namespace t2
       SignalSet("child processes was aborted");
     }
 
-    if (0 == result.m_ReturnCode && passedOutputValidation != ValidationResult::Fail)
+    if (0 == result.m_ReturnCode && passedOutputValidation >= ValidationResult::UnexpectedConsoleOutputFail)
     {
       return BuildProgress::kSucceeded;
     }

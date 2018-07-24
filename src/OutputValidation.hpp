@@ -10,7 +10,8 @@ namespace t2
     {
         Pass,
         SwallowStdout,
-        Fail
+        UnexpectedConsoleOutputFail,
+        UnwrittenOutputFileFail
     };
 
     ValidationResult ValidateExecResultAgainstAllowedOutput(ExecResult* result, const NodeData* node_data);

@@ -951,7 +951,7 @@ namespace t2
       SignalSet("child processes was aborted");
     }
 
-    if (0 == result.m_ReturnCode && passedOutputValidation >= ValidationResult::UnexpectedConsoleOutputFail)
+    if (0 == result.m_ReturnCode && passedOutputValidation < ValidationResult::UnexpectedConsoleOutputFail)
     {
       return BuildProgress::kSucceeded;
     }

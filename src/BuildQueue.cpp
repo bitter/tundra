@@ -930,7 +930,10 @@ namespace t2
         for (int i = 0; i < n_outputs; i++)
         {
           FileInfo info = GetFileInfo(node_data->m_OutputFiles[i].m_Filename);
-          untouched_outputs[i] = pre_timestamps[i] == info.m_Timestamp;
+          bool untouched = pre_timestamps[i] == info.m_Timestamp;
+          untouched_outputs[i] = untouched;
+          if (untouched)
+            passedOutputValidation = ValidationResult::UnwrittenOutputFileFail;
         }
       }
 

@@ -218,6 +218,7 @@ void PrintNodeResult(
     int duration = TimerDiffSeconds(time_exec_started, now);
     
     EmitColor(failed ? RED : GRN);
+
     printf("[");
     if (failed && !EmitColors)
       printf("!FAILED! ");
@@ -284,7 +285,6 @@ void PrintNodeResult(
                 printf("%s\n", (const char*)node_data->m_OutputFiles[i].m_Filename);
           }
         }
-        printf("fuck!\n");
         if (result->m_WasSignalled)
           PrintDiagnostic("Was Signaled", "Yes");
         if (result->m_WasAborted)

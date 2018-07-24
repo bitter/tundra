@@ -921,7 +921,7 @@ namespace t2
       else
       {
         last_cmd_line = cmd_line;
-        result = ExecuteProcess(cmd_line, env_count, env_vars, thread_state->m_Queue->m_Config.m_Heap, job_id, true, SlowCallback, &slowCallbackData);
+        result = ExecuteProcess(cmd_line, env_count, env_vars, thread_state->m_Queue->m_Config.m_Heap, job_id, false, SlowCallback, &slowCallbackData);
         passedOutputValidation = ValidateExecResultAgainstAllowedOutput(&result, node_data);
       }
 
@@ -1042,7 +1042,7 @@ namespace t2
 
           // If we couldn't make progress, we're a parked expensive node.
           // Another expensive job will put us back on the queue later when it
-          // has finshed.
+          // has finished.
           if (BuildProgress::kRunAction == node->m_Progress)
             return;
 

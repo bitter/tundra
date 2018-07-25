@@ -37,6 +37,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <windows.h>
+#include <VersionHelpers.h>
 #include <thread>
 
 namespace t2
@@ -439,11 +440,20 @@ ExecResult ExecuteProcess(
   void* attributeListAllocation = nullptr;
   if (!stream_to_stdout)
   {
-    HANDLE handles_to_enherit[2] = { 0,0 };
-    sinfo.StartupInfo.hStdOutput = sinfo.StartupInfo.hStdError = handles_to_enherit[0] = GetOrCreateTempFileFor(job_id);
-    sinfo.StartupInfo.hStdInput = handles_to_enherit[1] = GetStdHandle(STD_INPUT_HANDLE);
+    sinfo.StartupInfo.hStdOutput = sinfo.StartupInfo.hStdError = GetOrCreateTempFileFor(job_id);
+    sinfo.StartupInfo.hStdInput = GetStdHandle(STD_INPUT_HANDLE);  
     sinfo.StartupInfo.dwFlags |= STARTF_USESTDHANDLES;
     creationFlags |= EXTENDED_STARTUPINFO_PRESENT;
+
+    HANDLE handles_to_inherit[2];
+    size_t num_handles_to_inherit = 1;
+    handles_to_inherit[0] = sinfo.StartupInfo.hStdOutput;
+
+    if (IsWindows8OrGreater()) // Inheriting stdin fails on Windows 7 with Win32 error 1450
+    {
+      handles_to_inherit[1] = sinfo.StartupInfo.hStdInput;
+      ++num_handles_to_inherit;
+    }
 
     SIZE_T attributeListSize = 0;
 
@@ -457,7 +467,7 @@ ExecResult ExecuteProcess(
     //but this call is supposed to succeed, so here we check it for returning ==0
     if (!InitializeProcThreadAttributeList(sinfo.lpAttributeList, 1, 0, &attributeListSize))
       CroakErrno("InitializeProcThreadAttributeList failed (2)");
-    if (!UpdateProcThreadAttribute(sinfo.lpAttributeList, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST, handles_to_enherit, sizeof(handles_to_enherit), NULL, NULL))
+    if (!UpdateProcThreadAttribute(sinfo.lpAttributeList, 0, PROC_THREAD_ATTRIBUTE_HANDLE_LIST, handles_to_inherit, sizeof(HANDLE) * num_handles_to_inherit, NULL, NULL))
       CroakErrno("UpdateProcThreadAttribute failed");
   }
 

@@ -900,6 +900,66 @@ bool DriverSaveDigestCache(Driver* self)
 }
 
 
+struct StateSavingSegments
+{
+  BinarySegment* main;
+  BinarySegment* guid;
+  BinarySegment* state;
+  BinarySegment* array;
+  BinarySegment* string;
+};
+
+static const char* GetFileNameFrom(const FrozenFileAndHash& container)
+{
+  return container.m_Filename;
+}
+
+static const char* GetFileNameFrom(const FrozenString& container)
+{
+  return container;
+}
+
+
+template<class TNodeType>
+static void save_node_sharedcode(int build_result, const HashDigest* input_signature, const TNodeType* src_node, const HashDigest* guid, const StateSavingSegments& segments)
+{
+  BinarySegmentWrite(segments.guid, (const char*) guid, sizeof(HashDigest));
+
+  BinarySegmentWriteInt32(segments.state, build_result);
+  BinarySegmentWrite(segments.state, (const char*) input_signature, sizeof(HashDigest));
+  
+  int32_t file_count = src_node->m_OutputFiles.GetCount();
+  BinarySegmentWriteInt32(segments.state, file_count);
+  BinarySegmentWritePointer(segments.state, BinarySegmentPosition(segments.array));
+  for (int32_t i = 0; i < file_count; ++i)
+  {
+    BinarySegmentWritePointer(segments.array, BinarySegmentPosition(segments.string));
+    BinarySegmentWriteStringData(segments.string, GetFileNameFrom(src_node->m_OutputFiles[i]));
+  }
+
+  file_count = src_node->m_AuxOutputFiles.GetCount();
+  BinarySegmentWriteInt32(segments.state, file_count);
+  BinarySegmentWritePointer(segments.state, BinarySegmentPosition(segments.array));
+  for (int32_t i = 0; i < file_count; ++i)
+  {
+    BinarySegmentWritePointer(segments.array, BinarySegmentPosition(segments.string));
+    BinarySegmentWriteStringData(segments.string, GetFileNameFrom(src_node->m_AuxOutputFiles[i]));
+  }
+
+  BinarySegmentWritePointer(segments.state, BinarySegmentPosition(segments.string));
+  BinarySegmentWriteStringData(segments.string, src_node->m_Action);
+
+  if (src_node->m_PreAction)
+  {
+    BinarySegmentWritePointer(segments.state, BinarySegmentPosition(segments.string));
+    BinarySegmentWriteStringData(segments.string, src_node->m_PreAction);
+  }
+  else
+  {
+    BinarySegmentWriteNullPointer(segments.state);
+  }
+}
+
 bool DriverSaveBuildState(Driver* self)
 {
   TimingScope timing_scope(nullptr, &g_Stats.m_StateSaveTimeCycles);
@@ -910,11 +970,18 @@ bool DriverSaveBuildState(Driver* self)
   BinaryWriter writer;
   BinaryWriterInit(&writer, &self->m_Heap);
 
+  StateSavingSegments segments;
   BinarySegment *main_seg   = BinaryWriterAddSegment(&writer);
   BinarySegment *guid_seg   = BinaryWriterAddSegment(&writer);
   BinarySegment *state_seg  = BinaryWriterAddSegment(&writer);
   BinarySegment *array_seg  = BinaryWriterAddSegment(&writer);
   BinarySegment *string_seg = BinaryWriterAddSegment(&writer);
+
+  segments.main = main_seg;
+  segments.guid = guid_seg;
+  segments.state = state_seg;
+  segments.array = array_seg;
+  segments.string = string_seg;
 
   BinaryLocator guid_ptr  = BinarySegmentPosition(guid_seg);
   BinaryLocator state_ptr = BinarySegmentPosition(state_seg);
@@ -943,50 +1010,18 @@ bool DriverSaveBuildState(Driver* self)
 
   int entry_count = 0;
 
+
   auto save_node_state = [=](int build_result, const HashDigest* input_signature, const NodeData* src_node, const HashDigest* guid) -> void
   {
     MemAllocLinear* scratch = &self->m_Allocator;
-    BinarySegmentWrite(guid_seg, (const char*) guid, sizeof(HashDigest));
-
-    BinarySegmentWriteInt32(state_seg, build_result);
-    BinarySegmentWrite(state_seg, (const char*) input_signature, sizeof(HashDigest));
-    
-    int32_t file_count = src_node->m_OutputFiles.GetCount();
-    BinarySegmentWriteInt32(state_seg, file_count);
-    BinarySegmentWritePointer(state_seg, BinarySegmentPosition(array_seg));
-    for (int32_t i = 0; i < file_count; ++i)
-    {
-      BinarySegmentWritePointer(array_seg, BinarySegmentPosition(string_seg));
-      BinarySegmentWriteStringData(string_seg, src_node->m_OutputFiles[i].m_Filename);
-    }
-
-    file_count = src_node->m_AuxOutputFiles.GetCount();
-    BinarySegmentWriteInt32(state_seg, file_count);
-    BinarySegmentWritePointer(state_seg, BinarySegmentPosition(array_seg));
-    for (int32_t i = 0; i < file_count; ++i)
-    {
-      BinarySegmentWritePointer(array_seg, BinarySegmentPosition(string_seg));
-      BinarySegmentWriteStringData(string_seg, src_node->m_AuxOutputFiles[i].m_Filename);
-    }
-
-    BinarySegmentWritePointer(state_seg, BinarySegmentPosition(string_seg));
-    BinarySegmentWriteStringData(string_seg, src_node->m_Action);
-
-    if (src_node->m_PreAction)
-    {
-      BinarySegmentWritePointer(state_seg, BinarySegmentPosition(string_seg));
-      BinarySegmentWriteStringData(string_seg, src_node->m_PreAction);
-    }
-    else
-    {
-      BinarySegmentWriteNullPointer(state_seg);
-    }
+  
+    save_node_sharedcode(build_result, input_signature, src_node, guid, segments);
 
     HashSet<kFlagPathStrings> implicitDependencies;
     if (src_node->m_Scanner)
       HashSetInit(&implicitDependencies, &self->m_Heap);
 
-    file_count = src_node->m_InputFiles.GetCount();
+    int32_t file_count = src_node->m_InputFiles.GetCount();
     BinarySegmentWriteInt32(state_seg, file_count);
     BinarySegmentWritePointer(state_seg, BinarySegmentPosition(array_seg));
     for (int32_t i = 0; i < file_count; ++i)
@@ -1055,43 +1090,9 @@ bool DriverSaveBuildState(Driver* self)
 
   auto save_node_state_old = [=](int build_result, const HashDigest* input_signature, const NodeStateData* src_node, const HashDigest* guid) -> void
   {
-    BinarySegmentWrite(guid_seg, (const char*) guid, sizeof(HashDigest));
+    save_node_sharedcode(build_result, input_signature, src_node, guid, segments);
 
-    BinarySegmentWriteInt32(state_seg, build_result);
-    BinarySegmentWrite(state_seg, (const char*) input_signature, sizeof(HashDigest));
-    
-    int32_t file_count = src_node->m_OutputFiles.GetCount();
-    BinarySegmentWriteInt32(state_seg, file_count);
-    BinarySegmentWritePointer(state_seg, BinarySegmentPosition(array_seg));
-    for (int32_t i = 0; i < file_count; ++i)
-    {
-      BinarySegmentWritePointer(array_seg, BinarySegmentPosition(string_seg));
-      BinarySegmentWriteStringData(string_seg, src_node->m_OutputFiles[i]);
-    }
-
-    file_count = src_node->m_AuxOutputFiles.GetCount();
-    BinarySegmentWriteInt32(state_seg, file_count);
-    BinarySegmentWritePointer(state_seg, BinarySegmentPosition(array_seg));
-    for (int32_t i = 0; i < file_count; ++i)
-    {
-      BinarySegmentWritePointer(array_seg, BinarySegmentPosition(string_seg));
-      BinarySegmentWriteStringData(string_seg, src_node->m_AuxOutputFiles[i]);
-    }
-
-    BinarySegmentWritePointer(state_seg, BinarySegmentPosition(string_seg));
-    BinarySegmentWriteStringData(string_seg, src_node->m_Action);
-
-    if (src_node->m_PreAction)
-    {
-      BinarySegmentWritePointer(state_seg, BinarySegmentPosition(string_seg));
-      BinarySegmentWriteStringData(string_seg, src_node->m_PreAction);
-    }
-    else
-    {
-      BinarySegmentWriteNullPointer(state_seg);
-    }
-
-    file_count = src_node->m_InputFiles.GetCount();
+    int32_t file_count = src_node->m_InputFiles.GetCount();
     BinarySegmentWriteInt32(state_seg, file_count);
     BinarySegmentWritePointer(state_seg, BinarySegmentPosition(array_seg));
     for (int32_t i = 0; i < file_count; ++i)

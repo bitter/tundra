@@ -588,6 +588,7 @@ namespace t2
       HashAddString(&sighash, (const char*)input);
 
     HashAddInteger(&sighash, (node_data->m_Flags & NodeData::kFlagAllowUnexpectedOutput) ? 1 : 0);
+    HashAddInteger(&sighash, (node_data->m_Flags & NodeData::kFlagAllowUnwrittenOutputFiles) ? 1 : 0);
 
     HashFinalize(&sighash, &node->m_InputSignature);
 
@@ -925,7 +926,7 @@ namespace t2
         passedOutputValidation = ValidateExecResultAgainstAllowedOutput(&result, node_data);
       }
 
-      if (passedOutputValidation == ValidationResult::Pass)
+      if (passedOutputValidation == ValidationResult::Pass && !(node_data->m_Flags & NodeData::kFlagAllowUnwrittenOutputFiles))
       {
         for (int i = 0; i < n_outputs; i++)
         {

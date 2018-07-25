@@ -105,6 +105,7 @@ struct NodeData
     kFlagAllowUnexpectedOutput = 1 << 3,
     
     kFlagIsWriteTextFileAction = 1 << 4,
+    kFlagAllowUnwrittenOutputFiles = 1 << 5
   };
 
   FrozenString                    m_Action;

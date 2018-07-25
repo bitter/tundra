@@ -24,7 +24,6 @@ struct NodeStateData
   HashDigest                     m_InputSignature;
   FrozenArray<FrozenString>      m_OutputFiles;
   FrozenArray<FrozenString>      m_AuxOutputFiles;
-  uint32_t                       m_TimeStampOfLastUseInDays;
   FrozenString                   m_Action;
   FrozenString                   m_PreAction;
   FrozenArray<NodeInputFileData> m_InputFiles;

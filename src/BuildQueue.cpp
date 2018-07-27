@@ -911,11 +911,13 @@ namespace t2
 
       uint64_t* pre_timestamps = (uint64_t*)LinearAllocate(&thread_state->m_ScratchAlloc, n_outputs, (size_t)sizeof(uint64_t));
 
-      for (int i = 0; i < n_outputs; i++)
-      {
-        FileInfo info = GetFileInfo(node_data->m_OutputFiles[i].m_Filename);
-        pre_timestamps[i] = info.m_Timestamp;
-      }
+      bool allowUnwrittenOutputFiles = (node_data->m_Flags & NodeData::kFlagAllowUnwrittenOutputFiles);
+      if (!allowUnwrittenOutputFiles)
+        for (int i = 0; i < n_outputs; i++)
+        {
+          FileInfo info = GetFileInfo(node_data->m_OutputFiles[i].m_Filename);
+          pre_timestamps[i] = info.m_Timestamp;
+        }
 
       if (isWriteFileAction)
         result = WriteTextFile(node_data->m_Action, node_data->m_OutputFiles[0].m_Filename, thread_state->m_Queue->m_Config.m_Heap);
@@ -926,7 +928,7 @@ namespace t2
         passedOutputValidation = ValidateExecResultAgainstAllowedOutput(&result, node_data);
       }
 
-      if (passedOutputValidation == ValidationResult::Pass && !(node_data->m_Flags & NodeData::kFlagAllowUnwrittenOutputFiles))
+      if (passedOutputValidation == ValidationResult::Pass && !allowUnwrittenOutputFiles)
       {
         for (int i = 0; i < n_outputs; i++)
         {

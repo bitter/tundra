@@ -1,4 +1,4 @@
-﻿#include "NodeResultPrinting.hpp"
+#include "NodeResultPrinting.hpp"
 #include "DagData.hpp"
 #include "BuildQueue.hpp"
 #include "Exec.hpp"
@@ -198,10 +198,18 @@ static void PrintBufferTrimmed(OutputBufferData* buffer)
 }
 
 
-void PrintNodeResult(ExecResult* result, const NodeData* node_data, const char* cmd_line, BuildQueue* queue, bool always_verbose, uint64_t time_exec_started, ValidationResult validationResult)
+void PrintNodeResult(
+  ExecResult* result,
+  const NodeData* node_data,
+  const char* cmd_line,
+  BuildQueue* queue,
+  bool always_verbose,
+  uint64_t time_exec_started,
+  ValidationResult validationResult,
+  bool* untouched_outputs)
 {
     int processedNodeCount = ++queue->m_ProcessedNodeCount;
-    bool failed = result->m_ReturnCode != 0 || result->m_WasSignalled || validationResult == ValidationResult::Fail;
+    bool failed = result->m_ReturnCode != 0 || result->m_WasSignalled || validationResult >= ValidationResult::UnexpectedConsoleOutputFail;
     bool verbose = (failed && !result->m_WasAborted) || always_verbose;
 
     int maxDigits = ceil(log10(queue->m_Config.m_MaxNodes+1)); 
@@ -210,6 +218,7 @@ void PrintNodeResult(ExecResult* result, const NodeData* node_data, const char* 
     int duration = TimerDiffSeconds(time_exec_started, now);
     
     EmitColor(failed ? RED : GRN);
+
     printf("[");
     if (failed && !EmitColors)
       printf("!FAILED! ");
@@ -257,16 +266,25 @@ void PrintNodeResult(ExecResult* result, const NodeData* node_data, const char* 
            auto& entry = node_data->m_EnvVars[i];
            printf("%s=%s\n", entry.m_Name.Get(), entry.m_Value.Get() );
         }
-        if (validationResult == ValidationResult::Fail && result->m_ReturnCode == 0 && !result->m_WasSignalled)
+        if (result->m_ReturnCode == 0 && !result->m_WasSignalled)
         {
-          PrintDiagnosticPrefix("Failed because this command wrote something to the output that wasnt expected. We were expecting any of the following strings:", RED);
-          int count = node_data->m_AllowedOutputSubstrings.GetCount();
-          for (int i=0; i!=count ; i++)
-            printf("%s\n", (const char*)node_data->m_AllowedOutputSubstrings[i]);
-          if (count == 0)
-            printf("<< no allowed strings >>\n");
+          if (validationResult == ValidationResult::UnexpectedConsoleOutputFail)
+          {
+            PrintDiagnosticPrefix("Failed because this command wrote something to the output that wasn't expected. We were expecting any of the following strings:", RED);
+            int count = node_data->m_AllowedOutputSubstrings.GetCount();
+            for (int i = 0; i != count; i++)
+              printf("%s\n", (const char*)node_data->m_AllowedOutputSubstrings[i]);
+            if (count == 0)
+              printf("<< no allowed strings >>\n");
+          }
+          else if (validationResult == ValidationResult::UnwrittenOutputFileFail)
+          {
+            PrintDiagnosticPrefix("Failed because this command failed to write the following output files:", RED);
+            for (int i = 0; i < node_data->m_OutputFiles.GetCount(); i++)
+              if (untouched_outputs[i])
+                printf("%s\n", (const char*)node_data->m_OutputFiles[i].m_Filename);
+          }
         }
-
         if (result->m_WasSignalled)
           PrintDiagnostic("Was Signaled", "Yes");
         if (result->m_WasAborted)

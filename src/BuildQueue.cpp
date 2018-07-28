@@ -33,7 +33,6 @@ namespace t2
     };
   }
 
-
   static void ThreadStateInit(ThreadState* self, BuildQueue* queue, size_t scratch_size, int index)
   {
     HeapInit(&self->m_LocalHeap);
@@ -236,7 +235,7 @@ namespace t2
 
     if (info.Exists())
     {
-      // Just asssume this is a directory. We could check it - but there's currently no way via _stat64() calls
+      // Just assume this is a directory. We could check it - but there's currently no way via _stat64() calls
       // on Windows to check if a file is a symbolic link (to a directory).
       return true;
     }
@@ -589,6 +588,7 @@ namespace t2
       HashAddString(&sighash, (const char*)input);
 
     HashAddInteger(&sighash, (node_data->m_Flags & NodeData::kFlagAllowUnexpectedOutput) ? 1 : 0);
+    HashAddInteger(&sighash, (node_data->m_Flags & NodeData::kFlagAllowUnwrittenOutputFiles) ? 1 : 0);
 
     HashFinalize(&sighash, &node->m_InputSignature);
 
@@ -887,6 +887,11 @@ namespace t2
     slowCallbackData.queue_lock = queue_lock;
     slowCallbackData.build_queue = thread_state->m_Queue;
 
+    size_t n_outputs = (size_t)node_data->m_OutputFiles.GetCount();
+
+    bool* untouched_outputs = (bool*)LinearAllocate(&thread_state->m_ScratchAlloc, n_outputs, (size_t)sizeof(bool));
+    memset(untouched_outputs, 0, n_outputs * sizeof(bool));
+
     if (pre_cmd_line)
     {
       Log(kSpam, "Launching pre-action process");
@@ -903,6 +908,17 @@ namespace t2
       Log(kSpam, "Launching process");
       TimingScope timing_scope(&g_Stats.m_ExecCount, &g_Stats.m_ExecTimeCycles);
       ProfilerScope prof_scope(annotation, job_id);
+
+      uint64_t* pre_timestamps = (uint64_t*)LinearAllocate(&thread_state->m_ScratchAlloc, n_outputs, (size_t)sizeof(uint64_t));
+
+      bool allowUnwrittenOutputFiles = (node_data->m_Flags & NodeData::kFlagAllowUnwrittenOutputFiles);
+      if (!allowUnwrittenOutputFiles)
+        for (int i = 0; i < n_outputs; i++)
+        {
+          FileInfo info = GetFileInfo(node_data->m_OutputFiles[i].m_Filename);
+          pre_timestamps[i] = info.m_Timestamp;
+        }
+
       if (isWriteFileAction)
         result = WriteTextFile(node_data->m_Action, node_data->m_OutputFiles[0].m_Filename, thread_state->m_Queue->m_Config.m_Heap);
       else
@@ -911,6 +927,19 @@ namespace t2
         result = ExecuteProcess(cmd_line, env_count, env_vars, thread_state->m_Queue->m_Config.m_Heap, job_id, false, SlowCallback, &slowCallbackData);
         passedOutputValidation = ValidateExecResultAgainstAllowedOutput(&result, node_data);
       }
+
+      if (passedOutputValidation == ValidationResult::Pass && !allowUnwrittenOutputFiles)
+      {
+        for (int i = 0; i < n_outputs; i++)
+        {
+          FileInfo info = GetFileInfo(node_data->m_OutputFiles[i].m_Filename);
+          bool untouched = pre_timestamps[i] == info.m_Timestamp;
+          untouched_outputs[i] = untouched;
+          if (untouched)
+            passedOutputValidation = ValidationResult::UnwrittenOutputFileFail;
+        }
+      }
+
       Log(kSpam, "Process return code %d", result.m_ReturnCode);
     }
 
@@ -920,7 +949,7 @@ namespace t2
     }
 
     MutexLock(queue_lock);
-    PrintNodeResult(&result, node_data, last_cmd_line, thread_state->m_Queue, echo_cmdline, time_of_start, passedOutputValidation);
+    PrintNodeResult(&result, node_data, last_cmd_line, thread_state->m_Queue, echo_cmdline, time_of_start, passedOutputValidation, untouched_outputs);
     ExecResultFreeMemory(&result);
 
     if (result.m_WasAborted)
@@ -928,7 +957,7 @@ namespace t2
       SignalSet("child processes was aborted");
     }
 
-    if (0 == result.m_ReturnCode && passedOutputValidation != ValidationResult::Fail)
+    if (0 == result.m_ReturnCode && passedOutputValidation < ValidationResult::UnexpectedConsoleOutputFail)
     {
       return BuildProgress::kSucceeded;
     }
@@ -1019,7 +1048,7 @@ namespace t2
 
           // If we couldn't make progress, we're a parked expensive node.
           // Another expensive job will put us back on the queue later when it
-          // has finshed.
+          // has finished.
           if (BuildProgress::kRunAction == node->m_Progress)
             return;
 

@@ -1,4 +1,4 @@
-﻿#include "Exec.hpp"
+#include "Exec.hpp"
 #include "DagData.hpp"
 #include "re.h"
 
@@ -44,7 +44,7 @@ ValidationResult ValidateExecResultAgainstAllowedOutput(ExecResult* result, cons
             return returnValue;
         }
     }
-    return allowOutput ? ValidationResult::Pass : ValidationResult::Fail;
+    return allowOutput ? ValidationResult::Pass : ValidationResult::UnexpectedConsoleOutputFail;
 }
 
 }

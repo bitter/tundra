@@ -363,7 +363,8 @@ static bool WriteNodes(
     flags |= GetNodeFlag(node, "OverwriteOutputs", NodeData::kFlagOverwriteOutputs);
     flags |= GetNodeFlag(node, "PreciousOutputs",  NodeData::kFlagPreciousOutputs);
     flags |= GetNodeFlag(node, "Expensive",        NodeData::kFlagExpensive);
-    flags |= GetNodeFlag(node, "AllowUnexpectedOutput",  NodeData::kFlagAllowUnexpectedOutput, false);
+    flags |= GetNodeFlag(node, "AllowUnexpectedOutput", NodeData::kFlagAllowUnexpectedOutput, false);
+    flags |= GetNodeFlag(node, "AllowUnwrittenOutputFiles", NodeData::kFlagAllowUnwrittenOutputFiles, false);
     if (writetextfile_payload != nullptr)
       flags |= NodeData::kFlagIsWriteTextFileAction;
     

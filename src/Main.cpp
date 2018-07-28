@@ -362,7 +362,7 @@ int main(int argc, char* argv[])
   if (options.m_IdeGen)
   {
     // FIXME: How to detect build file for other type of generators?
-    // FIXME: Wire up remaining arguments on command line to go onto this commmand line
+    // FIXME: Wire up remaining arguments on command line to go onto this command line
     GenerateIdeIntegrationFiles("tundra.lua", argc, (const char**) argv);
     return 0;
   }

@@ -47,6 +47,8 @@ private:
 };
 
 typedef FrozenPtr<const char> FrozenString;
+  
+const uint64_t storage_for_empty_frozenarrays = 0;
 
 template <typename T>
 class FrozenArray
@@ -68,8 +70,13 @@ public:
     return m_Pointer[index];
   }
 
+  static const FrozenArray<T>& empty()
+  {
+      return *reinterpret_cast<const FrozenArray<T>*>(&storage_for_empty_frozenarrays);
+  }
+
 private:
-  FrozenArray();
+  FrozenArray() {}
   ~FrozenArray();
   FrozenArray& operator=(const FrozenArray&);
   FrozenArray(const FrozenArray&);

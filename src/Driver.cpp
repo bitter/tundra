@@ -919,7 +919,6 @@ static const char* GetFileNameFrom(const FrozenString& container)
   return container;
 }
 
-
 template<class TNodeType>
 static void save_node_sharedcode(int build_result, const HashDigest* input_signature, const TNodeType* src_node, const HashDigest* guid, const StateSavingSegments& segments)
 {
@@ -927,7 +926,7 @@ static void save_node_sharedcode(int build_result, const HashDigest* input_signa
 
   BinarySegmentWriteInt32(segments.state, build_result);
   BinarySegmentWrite(segments.state, (const char*) input_signature, sizeof(HashDigest));
-  
+
   int32_t file_count = src_node->m_OutputFiles.GetCount();
   BinarySegmentWriteInt32(segments.state, file_count);
   BinarySegmentWritePointer(segments.state, BinarySegmentPosition(segments.array));
@@ -958,6 +957,12 @@ static void save_node_sharedcode(int build_result, const HashDigest* input_signa
   {
     BinarySegmentWriteNullPointer(segments.state);
   }
+}
+
+static bool node_was_used_by_this_dag_previously(const NodeStateData* node_state_data, uint32_t current_dag_identifier)
+{
+  auto& previous_dags = node_state_data->m_DagsWeHaveSeenThisNodeInPreviously;
+  return std::find(previous_dags.begin(), previous_dags.end(), current_dag_identifier) != previous_dags.end();
 }
 
 bool DriverSaveBuildState(Driver* self)
@@ -1009,9 +1014,9 @@ bool DriverSaveBuildState(Driver* self)
   }
 
   int entry_count = 0;
+  uint32_t this_dag_hashed_identifier =  self->m_DagData->m_HashedIdentifier;
 
-
-  auto save_node_state = [=](int build_result, const HashDigest* input_signature, const NodeData* src_node, const HashDigest* guid) -> void
+  auto save_node_state = [=](int build_result, const HashDigest* input_signature, const NodeData* src_node, const NodeStateData* node_data_state, const HashDigest* guid) -> void
   {
     MemAllocLinear* scratch = &self->m_Allocator;
   
@@ -1086,6 +1091,19 @@ bool DriverSaveBuildState(Driver* self)
       BinarySegmentWriteInt32(state_seg, 0);
       BinarySegmentWriteNullPointer(state_seg);
     }
+
+    //we cast the empty_frozen_array below here to a FrozenArray<uint32_t> that is empty, so the code below gets a lot simpler.
+    const FrozenArray<uint32_t>& previous_dags = (node_data_state == nullptr) ? FrozenArray<uint32_t>::empty() : node_data_state->m_DagsWeHaveSeenThisNodeInPreviously;
+
+    bool haveToAddOurselves = std::find(previous_dags.begin(), previous_dags.end(), this_dag_hashed_identifier) == previous_dags.end();
+
+    BinarySegmentWriteUint32(state_seg, previous_dags.GetCount() + (haveToAddOurselves ? 1 : 0));
+    BinarySegmentWritePointer(state_seg, BinarySegmentPosition(array_seg));
+    for(auto& identifier : previous_dags)
+      BinarySegmentWriteUint32(array_seg, identifier);
+    
+    if (haveToAddOurselves)
+      BinarySegmentWriteUint32(array_seg, this_dag_hashed_identifier);
   };
 
   auto save_node_state_old = [=](int build_result, const HashDigest* input_signature, const NodeStateData* src_node, const HashDigest* guid) -> void
@@ -1111,6 +1129,11 @@ bool DriverSaveBuildState(Driver* self)
       BinarySegmentWritePointer(array_seg, BinarySegmentPosition(string_seg));
       BinarySegmentWriteStringData(string_seg, src_node->m_ImplicitInputFiles[i].m_Filename);
     }
+
+    int32_t dag_count = src_node->m_DagsWeHaveSeenThisNodeInPreviously.GetCount();
+    BinarySegmentWriteInt32(state_seg, dag_count);
+    BinarySegmentWritePointer(state_seg, BinarySegmentPosition(array_seg));
+    BinarySegmentWrite(array_seg, src_node->m_DagsWeHaveSeenThisNodeInPreviously.GetArray(), dag_count * sizeof(uint32_t));
   };
 
   auto save_new = [=, &entry_count](size_t index) {
@@ -1134,7 +1157,7 @@ bool DriverSaveBuildState(Driver* self)
     }
     else
     {
-      save_node_state(elem->m_BuildResult, &elem->m_InputSignature, src_elem, guid);
+      save_node_state(elem->m_BuildResult, &elem->m_InputSignature, src_elem, elem->m_MmapState, guid);
       ++entry_count;
       ++g_Stats.m_StateSaveNew;
     }
@@ -1142,19 +1165,18 @@ bool DriverSaveBuildState(Driver* self)
 
   auto save_old = [=, &entry_count](size_t index) {
     const HashDigest    *guid = old_guids + index;
-    
-    // Make sure this node is still relevant before saving.
-    if (const HashDigest* new_version = BinarySearch(src_guids, src_count, *guid))
-    {
-      size_t src_index = (new_version - src_guids);
-      const NodeData* src_elem = src_data + src_index;
-      const NodeStateData *data = old_state + index;
+    const NodeStateData *data = old_state + index;
 
-      save_node_state(data->m_BuildResult, &data->m_InputSignature, src_elem, guid);
+    // Make sure this node is still relevant before saving.
+    bool node_is_in_dag = BinarySearch(src_guids, src_count, *guid) != nullptr;
+ 
+    if (node_is_in_dag || !node_was_used_by_this_dag_previously(data, this_dag_hashed_identifier))
+    {
+      save_node_state_old(data->m_BuildResult, &data->m_InputSignature, data, guid);
       ++entry_count;
       ++g_Stats.m_StateSaveOld;
     }
-    else
+    else 
       {
       // Drop this node.
         ++g_Stats.m_StateSaveDropped;
@@ -1201,7 +1223,6 @@ bool DriverSaveBuildState(Driver* self)
 
   return success;
 }
-
 
 void DriverRemoveStaleOutputs(Driver* self)
 {
@@ -1289,6 +1310,9 @@ void DriverRemoveStaleOutputs(Driver* self)
   for (int i = 0, state_count = state->m_NodeCount; i < state_count; ++i)
   {
     const NodeStateData* node = state->m_NodeStates + i;
+
+    if (!node_was_used_by_this_dag_previously(node, dag->m_HashedIdentifier))
+      continue;
 
     for (const char* path : node->m_OutputFiles)
     {

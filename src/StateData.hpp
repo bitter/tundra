@@ -28,11 +28,13 @@ struct NodeStateData
   FrozenString                   m_PreAction;
   FrozenArray<NodeInputFileData> m_InputFiles;
   FrozenArray<NodeInputFileData> m_ImplicitInputFiles;
+
+  FrozenArray<uint32_t>          m_DagsWeHaveSeenThisNodeInPreviously;
 };
 
 struct StateData
 {
-  static const uint32_t     MagicNumber = 0x15890104 ^ kTundraHashMagic;
+  static const uint32_t     MagicNumber = 0x1589A105 ^ kTundraHashMagic;
 
   uint32_t                 m_MagicNumber;
 

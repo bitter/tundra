@@ -49,7 +49,6 @@ static const char* s_DagFileName;
 
 static bool DriverPrepareDag(Driver* self, const char* dag_fn);
 static bool DriverCheckDagSignatures(Driver* self);
-const int millisecondsInADay = 1000 * 60 * 60 * 24;
 
 void DriverInitializeTundraFilePaths(DriverOptions* driverOptions)
 {
@@ -901,24 +900,93 @@ bool DriverSaveDigestCache(Driver* self)
 }
 
 
+struct StateSavingSegments
+{
+  BinarySegment* main;
+  BinarySegment* guid;
+  BinarySegment* state;
+  BinarySegment* array;
+  BinarySegment* string;
+};
+
+static const char* GetFileNameFrom(const FrozenFileAndHash& container)
+{
+  return container.m_Filename;
+}
+
+static const char* GetFileNameFrom(const FrozenString& container)
+{
+  return container;
+}
+
+template<class TNodeType>
+static void save_node_sharedcode(int build_result, const HashDigest* input_signature, const TNodeType* src_node, const HashDigest* guid, const StateSavingSegments& segments)
+{
+  BinarySegmentWrite(segments.guid, (const char*) guid, sizeof(HashDigest));
+
+  BinarySegmentWriteInt32(segments.state, build_result);
+  BinarySegmentWrite(segments.state, (const char*) input_signature, sizeof(HashDigest));
+
+  int32_t file_count = src_node->m_OutputFiles.GetCount();
+  BinarySegmentWriteInt32(segments.state, file_count);
+  BinarySegmentWritePointer(segments.state, BinarySegmentPosition(segments.array));
+  for (int32_t i = 0; i < file_count; ++i)
+  {
+    BinarySegmentWritePointer(segments.array, BinarySegmentPosition(segments.string));
+    BinarySegmentWriteStringData(segments.string, GetFileNameFrom(src_node->m_OutputFiles[i]));
+  }
+
+  file_count = src_node->m_AuxOutputFiles.GetCount();
+  BinarySegmentWriteInt32(segments.state, file_count);
+  BinarySegmentWritePointer(segments.state, BinarySegmentPosition(segments.array));
+  for (int32_t i = 0; i < file_count; ++i)
+  {
+    BinarySegmentWritePointer(segments.array, BinarySegmentPosition(segments.string));
+    BinarySegmentWriteStringData(segments.string, GetFileNameFrom(src_node->m_AuxOutputFiles[i]));
+  }
+
+  BinarySegmentWritePointer(segments.state, BinarySegmentPosition(segments.string));
+  BinarySegmentWriteStringData(segments.string, src_node->m_Action);
+
+  if (src_node->m_PreAction)
+  {
+    BinarySegmentWritePointer(segments.state, BinarySegmentPosition(segments.string));
+    BinarySegmentWriteStringData(segments.string, src_node->m_PreAction);
+  }
+  else
+  {
+    BinarySegmentWriteNullPointer(segments.state);
+  }
+}
+
+static bool node_was_used_by_this_dag_previously(const NodeStateData* node_state_data, uint32_t current_dag_identifier)
+{
+  auto& previous_dags = node_state_data->m_DagsWeHaveSeenThisNodeInPreviously;
+  return std::find(previous_dags.begin(), previous_dags.end(), current_dag_identifier) != previous_dags.end();
+}
+
 bool DriverSaveBuildState(Driver* self)
 {
   TimingScope timing_scope(nullptr, &g_Stats.m_StateSaveTimeCycles);
   ProfilerScope prof_scope("Tundra SaveState", 0);
 
   MemAllocLinearScope alloc_scope(&self->m_Allocator);
-  const uint64_t now = time(nullptr);
-
-  uint64_t timeToKeepNonReferencedNodesAround = self->m_DagData->m_DaysToKeepUnreferencedNodesAround * millisecondsInADay;
 
   BinaryWriter writer;
   BinaryWriterInit(&writer, &self->m_Heap);
 
+  StateSavingSegments segments;
   BinarySegment *main_seg   = BinaryWriterAddSegment(&writer);
   BinarySegment *guid_seg   = BinaryWriterAddSegment(&writer);
   BinarySegment *state_seg  = BinaryWriterAddSegment(&writer);
   BinarySegment *array_seg  = BinaryWriterAddSegment(&writer);
   BinarySegment *string_seg = BinaryWriterAddSegment(&writer);
+
+  segments.main = main_seg;
+  segments.guid = guid_seg;
+  segments.state = state_seg;
+  segments.array = array_seg;
+  segments.string = string_seg;
 
   BinaryLocator guid_ptr  = BinarySegmentPosition(guid_seg);
   BinaryLocator state_ptr = BinarySegmentPosition(state_seg);
@@ -945,99 +1013,20 @@ bool DriverSaveBuildState(Driver* self)
     old_count      = state_data->m_NodeCount;
   }
 
-  HashSet<kFlagPathStrings> file_table;
-  HashSetInit(&file_table, &self->m_Heap);
-  const DagData* dag = self->m_DagData;
-  MemAllocLinear* scratch = &self->m_Allocator;
-
-  // Insert all current regular and aux output files into the hash table.
-  auto add_file = [&file_table, scratch](const FrozenFileAndHash& p) -> void
-  {
-    const uint32_t hash = p.m_FilenameHash;
-
-    if (!HashSetLookup(&file_table, hash, p.m_Filename))
-    {
-      HashSetInsert(&file_table, hash, p.m_Filename);
-    }
-  };
-
-  for (int i = 0, node_count = dag->m_NodeCount; i < node_count; ++i)
-  {
-    const NodeData* node = dag->m_NodeData + i;
-
-    for (const FrozenFileAndHash& p : node->m_OutputFiles)
-      add_file(p);
-
-    for (const FrozenFileAndHash& p : node->m_AuxOutputFiles)
-      add_file(p);
-  }
-
-  auto does_a_new_node_exist_that_shares_an_output_path_with = [&file_table, scratch](const NodeStateData* node) -> bool
-  {
-    auto check_file = [&file_table, scratch](const char* path) -> bool
-    {
-      uint32_t path_hash = Djb2HashPath(path);
-      return HashSetLookup(&file_table, path_hash, path);
-    };
-
-    for (const char* path : node->m_OutputFiles)
-      if (check_file(path))
-        return true;
-    
-    for (const char* path : node->m_AuxOutputFiles)
-      if (check_file(path))
-        return true;
-    
-    return false;
-  };
-
   int entry_count = 0;
+  uint32_t this_dag_hashed_identifier =  self->m_DagData->m_HashedIdentifier;
 
-  auto save_node_state = [=](int build_result, const HashDigest* input_signature, const NodeData* src_node, const HashDigest* guid) -> void
+  auto save_node_state = [=](int build_result, const HashDigest* input_signature, const NodeData* src_node, const NodeStateData* node_data_state, const HashDigest* guid) -> void
   {
-    BinarySegmentWrite(guid_seg, (const char*) guid, sizeof(HashDigest));
-
-    BinarySegmentWriteInt32(state_seg, build_result);
-    BinarySegmentWrite(state_seg, (const char*) input_signature, sizeof(HashDigest));
-    
-    int32_t file_count = src_node->m_OutputFiles.GetCount();
-    BinarySegmentWriteInt32(state_seg, file_count);
-    BinarySegmentWritePointer(state_seg, BinarySegmentPosition(array_seg));
-    for (int32_t i = 0; i < file_count; ++i)
-    {
-      BinarySegmentWritePointer(array_seg, BinarySegmentPosition(string_seg));
-      BinarySegmentWriteStringData(string_seg, src_node->m_OutputFiles[i].m_Filename);
-    }
-
-    file_count = src_node->m_AuxOutputFiles.GetCount();
-    BinarySegmentWriteInt32(state_seg, file_count);
-    BinarySegmentWritePointer(state_seg, BinarySegmentPosition(array_seg));
-    for (int32_t i = 0; i < file_count; ++i)
-    {
-      BinarySegmentWritePointer(array_seg, BinarySegmentPosition(string_seg));
-      BinarySegmentWriteStringData(string_seg, src_node->m_AuxOutputFiles[i].m_Filename);
-    }
-
-    BinarySegmentWriteUint32(state_seg, (uint32_t)now/millisecondsInADay);
-
-    BinarySegmentWritePointer(state_seg, BinarySegmentPosition(string_seg));
-    BinarySegmentWriteStringData(string_seg, src_node->m_Action);
-
-    if (src_node->m_PreAction)
-    {
-      BinarySegmentWritePointer(state_seg, BinarySegmentPosition(string_seg));
-      BinarySegmentWriteStringData(string_seg, src_node->m_PreAction);
-    }
-    else
-    {
-      BinarySegmentWriteNullPointer(state_seg);
-    }
+    MemAllocLinear* scratch = &self->m_Allocator;
+  
+    save_node_sharedcode(build_result, input_signature, src_node, guid, segments);
 
     HashSet<kFlagPathStrings> implicitDependencies;
     if (src_node->m_Scanner)
       HashSetInit(&implicitDependencies, &self->m_Heap);
 
-    file_count = src_node->m_InputFiles.GetCount();
+    int32_t file_count = src_node->m_InputFiles.GetCount();
     BinarySegmentWriteInt32(state_seg, file_count);
     BinarySegmentWritePointer(state_seg, BinarySegmentPosition(array_seg));
     for (int32_t i = 0; i < file_count; ++i)
@@ -1102,49 +1091,26 @@ bool DriverSaveBuildState(Driver* self)
       BinarySegmentWriteInt32(state_seg, 0);
       BinarySegmentWriteNullPointer(state_seg);
     }
+
+    //we cast the empty_frozen_array below here to a FrozenArray<uint32_t> that is empty, so the code below gets a lot simpler.
+    const FrozenArray<uint32_t>& previous_dags = (node_data_state == nullptr) ? FrozenArray<uint32_t>::empty() : node_data_state->m_DagsWeHaveSeenThisNodeInPreviously;
+
+    bool haveToAddOurselves = std::find(previous_dags.begin(), previous_dags.end(), this_dag_hashed_identifier) == previous_dags.end();
+
+    BinarySegmentWriteUint32(state_seg, previous_dags.GetCount() + (haveToAddOurselves ? 1 : 0));
+    BinarySegmentWritePointer(state_seg, BinarySegmentPosition(array_seg));
+    for(auto& identifier : previous_dags)
+      BinarySegmentWriteUint32(array_seg, identifier);
+    
+    if (haveToAddOurselves)
+      BinarySegmentWriteUint32(array_seg, this_dag_hashed_identifier);
   };
 
   auto save_node_state_old = [=](int build_result, const HashDigest* input_signature, const NodeStateData* src_node, const HashDigest* guid) -> void
   {
-    BinarySegmentWrite(guid_seg, (const char*) guid, sizeof(HashDigest));
+    save_node_sharedcode(build_result, input_signature, src_node, guid, segments);
 
-    BinarySegmentWriteInt32(state_seg, build_result);
-    BinarySegmentWrite(state_seg, (const char*) input_signature, sizeof(HashDigest));
-    
-    int32_t file_count = src_node->m_OutputFiles.GetCount();
-    BinarySegmentWriteInt32(state_seg, file_count);
-    BinarySegmentWritePointer(state_seg, BinarySegmentPosition(array_seg));
-    for (int32_t i = 0; i < file_count; ++i)
-    {
-      BinarySegmentWritePointer(array_seg, BinarySegmentPosition(string_seg));
-      BinarySegmentWriteStringData(string_seg, src_node->m_OutputFiles[i]);
-    }
-
-    file_count = src_node->m_AuxOutputFiles.GetCount();
-    BinarySegmentWriteInt32(state_seg, file_count);
-    BinarySegmentWritePointer(state_seg, BinarySegmentPosition(array_seg));
-    for (int32_t i = 0; i < file_count; ++i)
-    {
-      BinarySegmentWritePointer(array_seg, BinarySegmentPosition(string_seg));
-      BinarySegmentWriteStringData(string_seg, src_node->m_AuxOutputFiles[i]);
-    }
-
-    BinarySegmentWriteUint32(state_seg, src_node->m_TimeStampOfLastUseInDays);
-
-    BinarySegmentWritePointer(state_seg, BinarySegmentPosition(string_seg));
-    BinarySegmentWriteStringData(string_seg, src_node->m_Action);
-
-    if (src_node->m_PreAction)
-    {
-      BinarySegmentWritePointer(state_seg, BinarySegmentPosition(string_seg));
-      BinarySegmentWriteStringData(string_seg, src_node->m_PreAction);
-    }
-    else
-    {
-      BinarySegmentWriteNullPointer(state_seg);
-    }
-
-    file_count = src_node->m_InputFiles.GetCount();
+    int32_t file_count = src_node->m_InputFiles.GetCount();
     BinarySegmentWriteInt32(state_seg, file_count);
     BinarySegmentWritePointer(state_seg, BinarySegmentPosition(array_seg));
     for (int32_t i = 0; i < file_count; ++i)
@@ -1163,6 +1129,11 @@ bool DriverSaveBuildState(Driver* self)
       BinarySegmentWritePointer(array_seg, BinarySegmentPosition(string_seg));
       BinarySegmentWriteStringData(string_seg, src_node->m_ImplicitInputFiles[i].m_Filename);
     }
+
+    int32_t dag_count = src_node->m_DagsWeHaveSeenThisNodeInPreviously.GetCount();
+    BinarySegmentWriteInt32(state_seg, dag_count);
+    BinarySegmentWritePointer(state_seg, BinarySegmentPosition(array_seg));
+    BinarySegmentWrite(array_seg, src_node->m_DagsWeHaveSeenThisNodeInPreviously.GetArray(), dag_count * sizeof(uint32_t));
   };
 
   auto save_new = [=, &entry_count](size_t index) {
@@ -1186,94 +1157,30 @@ bool DriverSaveBuildState(Driver* self)
     }
     else
     {
-      save_node_state(elem->m_BuildResult, &elem->m_InputSignature, src_elem, guid);
+      save_node_state(elem->m_BuildResult, &elem->m_InputSignature, src_elem, elem->m_MmapState, guid);
       ++entry_count;
       ++g_Stats.m_StateSaveNew;
     }
   };
 
-  HashSet<kFlagPathStrings> nuke_table;
-  HashSetInit(&nuke_table, &self->m_Heap);
-
-  // Check all output files in the state if they're still around.
-  // Otherwise schedule them (and all their parent dirs) for nuking.
-  // We will rely on the fact that we can't rmdir() non-empty directories.
-  auto schedule_file_nuke = [&nuke_table, scratch](const char* path)
-  {
-    uint32_t path_hash = Djb2HashPath(path);
-
-    if (!HashSetLookup(&nuke_table, path_hash, path))
-    {
-      HashSetInsert(&nuke_table, path_hash, path);
-    }
-
-    PathBuffer buffer;
-    PathInit(&buffer, path);
-
-    while (PathStripLast(&buffer))
-    {
-      if (buffer.m_SegCount == 0)
-        break;
-
-      char dir[kMaxPathLength];
-      PathFormat(dir, &buffer);
-      uint32_t dir_hash = Djb2HashPath(dir);
-
-      if (!HashSetLookup(&nuke_table, dir_hash, dir))
-      {
-        HashSetInsert(&nuke_table, dir_hash, StrDup(scratch, dir));
-      }
-    }
-  };
-
   auto save_old = [=, &entry_count](size_t index) {
     const HashDigest    *guid = old_guids + index;
-    
-    // Make sure this node is still relevant before saving.
-    if (const HashDigest* new_version = BinarySearch(src_guids, src_count, *guid))
-    {
-      size_t src_index = (new_version - src_guids);
-      const NodeData* src_elem = src_data + src_index;
-      const NodeStateData *data = old_state + index;
+    const NodeStateData *data = old_state + index;
 
-      save_node_state(data->m_BuildResult, &data->m_InputSignature, src_elem, guid);
+    // Make sure this node is still relevant before saving.
+    bool node_is_in_dag = BinarySearch(src_guids, src_count, *guid) != nullptr;
+ 
+    if (node_is_in_dag || !node_was_used_by_this_dag_previously(data, this_dag_hashed_identifier))
+    {
+      save_node_state_old(data->m_BuildResult, &data->m_InputSignature, data, guid);
       ++entry_count;
       ++g_Stats.m_StateSaveOld;
-      return;
     }
-
-    if (timeToKeepNonReferencedNodesAround == 0)
-    {
-      ++g_Stats.m_StateSaveDropped;
-      return;
-    }
-    
-    if (const HashDigest* old_guid = BinarySearch(old_guids, old_count, *guid))
-    {
-      size_t old_index = old_guid - old_guids;
-      const NodeStateData* old_state_data = old_state + old_index;
-
-      uint64_t timeStampOfLastUse = old_state_data->m_TimeStampOfLastUseInDays * (millisecondsInADay);
-
-      if ((now - timeStampOfLastUse) >= timeToKeepNonReferencedNodesAround)
+    else 
       {
+      // Drop this node.
         ++g_Stats.m_StateSaveDropped;
-        return;
       }
-
-      //ok, our policy is to keep unreferenced nodes around in the state for a while, and this node is fresh enough to keep,
-      //however we only want to do that if there are no new nodes that share any of its output files
-      if (!does_a_new_node_exist_that_shares_an_output_path_with(old_state_data))
-      {
-        save_node_state_old(old_state_data->m_BuildResult, &old_state_data->m_InputSignature, old_state_data, guid);
-        ++entry_count;
-        return;
-      }
-    }
-    
-    //assert?
-    ++g_Stats.m_StateSaveDropped;
-    return;
   };
 
   auto key_new = [=](size_t index) -> const HashDigest* {
@@ -1281,7 +1188,7 @@ bool DriverSaveBuildState(Driver* self)
     return src_guids + dag_index;
   };
 
-  auto key_old = [=](size_t index) -> const HashDigest* {
+  auto key_old = [=](size_t index) {
     return old_guids + index;
   };
 
@@ -1316,7 +1223,6 @@ bool DriverSaveBuildState(Driver* self)
 
   return success;
 }
-
 
 void DriverRemoveStaleOutputs(Driver* self)
 {
@@ -1404,6 +1310,9 @@ void DriverRemoveStaleOutputs(Driver* self)
   for (int i = 0, state_count = state->m_NodeCount; i < state_count; ++i)
   {
     const NodeStateData* node = state->m_NodeStates + i;
+
+    if (!node_was_used_by_this_dag_previously(node, dag->m_HashedIdentifier))
+      continue;
 
     for (const char* path : node->m_OutputFiles)
     {

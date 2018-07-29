@@ -653,6 +653,7 @@ static bool CompileDag(const JsonObjectValue* root, BinaryWriter* writer, MemAll
   const JsonArrayValue  *nodes         = FindArrayValue(root, "Nodes");
   const JsonArrayValue  *passes        = FindArrayValue(root, "Passes");
   const JsonArrayValue  *scanners      = FindArrayValue(root, "Scanners");
+  const char*           identifier     = FindStringValue(root, "Identifier", "default");
 
   if (EmptyArray(passes))
   {
@@ -678,6 +679,8 @@ static bool CompileDag(const JsonObjectValue* root, BinaryWriter* writer, MemAll
 
   // Write magic number
   BinarySegmentWriteUint32(main_seg, DagData::MagicNumber);
+
+  BinarySegmentWriteUint32(main_seg, Djb2Hash(identifier));
 
   // Compute node guids and index remapping table.
   // FIXME: this just leaks

@@ -451,8 +451,7 @@ int main(int argc, char* argv[])
 
   DriverReportStartup(&driver, (const char**) argv, argc);
 
-  if (driver.m_DagData->m_DaysToKeepUnreferencedNodesAround == -1)
-    DriverRemoveStaleOutputs(&driver);
+  DriverRemoveStaleOutputs(&driver);
 
   // Prepare list of nodes to build/clean/rebuild
   if (!DriverPrepareNodes(&driver, (const char**) argv, argc))

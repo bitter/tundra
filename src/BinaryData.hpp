@@ -76,7 +76,7 @@ public:
   }
 
 private:
-  FrozenArray() {}
+  FrozenArray();
   ~FrozenArray();
   FrozenArray& operator=(const FrozenArray&);
   FrozenArray(const FrozenArray&);

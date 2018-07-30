@@ -963,8 +963,10 @@ namespace t2
     }
     else
     {
-      // Clean up output files after a failed build unless they are precious.
-      if (0 == (NodeData::kFlagPreciousOutputs & node_data->m_Flags))
+      // Clean up output files after a failed build unless they are precious,
+      // or unless the failure was from failing to write one of them
+      if (0 == (NodeData::kFlagPreciousOutputs & node_data->m_Flags) &&
+        !(0 == result.m_ReturnCode && passedOutputValidation == ValidationResult::UnwrittenOutputFileFail))
       {
         for (const FrozenFileAndHash& output : node_data->m_OutputFiles)
         {

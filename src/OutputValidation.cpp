@@ -47,4 +47,15 @@ ValidationResult ValidateExecResultAgainstAllowedOutput(ExecResult* result, cons
     return allowOutput ? ValidationResult::Pass : ValidationResult::UnexpectedConsoleOutputFail;
 }
 
+bool IsAllowedExitCode(int32_t code, const NodeData* node_data)
+{
+  for (int32_t exitCode : node_data->m_AllowedExitCodes)
+  {
+    if (exitCode == code)
+      return true;
+  }
+
+  return false;
+}
+
 }

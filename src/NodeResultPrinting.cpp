@@ -209,19 +209,7 @@ void PrintNodeResult(
   bool* untouched_outputs)
 {
     int processedNodeCount = ++queue->m_ProcessedNodeCount;
-
-    bool failed = true;
-    for (int32_t exitCode : node_data->m_AllowedExitCodes)
-    {
-      if (exitCode != result->m_ReturnCode)
-        continue;
-
-      failed = false;
-      break;
-    }
-
-    failed |= result->m_WasSignalled || validationResult >= ValidationResult::UnexpectedConsoleOutputFail;
-
+    bool failed = !IsAllowedExitCode(result->m_ReturnCode, node_data) || result->m_WasSignalled || validationResult >= ValidationResult::UnexpectedConsoleOutputFail;
     bool verbose = (failed && !result->m_WasAborted) || always_verbose;
 
     int maxDigits = ceil(log10(queue->m_Config.m_MaxNodes+1)); 

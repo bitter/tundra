@@ -254,6 +254,7 @@ static bool WriteNodes(
     const int             scanner_index = (int) FindIntValue(node, "ScannerIndex", -1);
     const JsonArrayValue *frontend_rsps = FindArrayValue(node, "FrontendResponseFiles");
     const JsonArrayValue *allowedOutputSubstrings = FindArrayValue(node, "AllowedOutputSubstrings");
+    const JsonArrayValue *allowedExitCodes = FindArrayValue(node, "AllowedExitCodes");
     const char          *writetextfile_payload = FindStringValue(node, "WriteTextFilePayload");
 
     if (writetextfile_payload == nullptr)
@@ -323,6 +324,23 @@ static bool WriteNodes(
     {
       BinarySegmentWriteInt32(node_data_seg, 0);
       BinarySegmentWriteNullPointer(node_data_seg);
+    }
+
+    if (allowedExitCodes)
+    {
+      BinarySegmentWriteInt32(node_data_seg, (int)allowedExitCodes->m_Count);
+      BinarySegmentAlign(array2_seg, 4);
+      BinarySegmentWritePointer(node_data_seg, BinarySegmentPosition(array2_seg));
+      for (size_t i = 0; i < allowedExitCodes->m_Count; i++)
+        BinarySegmentWriteInt32(array2_seg, (int32_t)allowedExitCodes->m_Values[i]->AsNumber()->m_Number);
+    }
+    else
+    {
+      // Always write a 1-length array containing exit code 0 if not specified
+      BinarySegmentWriteInt32(node_data_seg, 1);
+      BinarySegmentAlign(array2_seg, 4);
+      BinarySegmentWritePointer(node_data_seg, BinarySegmentPosition(array2_seg));
+      BinarySegmentWriteInt32(array2_seg, 0);
     }
 
     // Environment variables

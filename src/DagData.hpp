@@ -119,6 +119,7 @@ struct NodeData
   FrozenArray<FrozenFileAndHash>  m_AuxOutputFiles;
   FrozenArray<FrozenFileAndHash>  m_FrontendResponseFiles;
   FrozenArray<FrozenString>       m_AllowedOutputSubstrings;
+  FrozenArray<int32_t>            m_AllowedExitCodes;
   FrozenArray<EnvVarData>         m_EnvVars;
   FrozenPtr<ScannerData>          m_Scanner;
   uint32_t                        m_Flags;
@@ -132,7 +133,7 @@ struct PassData
 
 struct DagData
 {
-  static const uint32_t         MagicNumber   = 0x2B89013f ^ kTundraHashMagic;
+  static const uint32_t         MagicNumber   = 0x2B89014f ^ kTundraHashMagic;
 
   uint32_t                      m_MagicNumber;
 

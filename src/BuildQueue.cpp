@@ -957,7 +957,17 @@ namespace t2
       SignalSet("child processes was aborted");
     }
 
-    if (0 == result.m_ReturnCode && passedOutputValidation < ValidationResult::UnexpectedConsoleOutputFail)
+    bool isReturnCodeOK = false;
+    for (int32_t exitCode : node_data->m_AllowedExitCodes)
+    {
+      if (result.m_ReturnCode != exitCode)
+        continue;
+
+      isReturnCodeOK = true;
+      break;
+    }
+
+    if (isReturnCodeOK && passedOutputValidation < ValidationResult::UnexpectedConsoleOutputFail)
     {
       return BuildProgress::kSucceeded;
     }
@@ -966,7 +976,7 @@ namespace t2
       // Clean up output files after a failed build unless they are precious,
       // or unless the failure was from failing to write one of them
       if (0 == (NodeData::kFlagPreciousOutputs & node_data->m_Flags) &&
-        !(0 == result.m_ReturnCode && passedOutputValidation == ValidationResult::UnwrittenOutputFileFail))
+        !(isReturnCodeOK && passedOutputValidation == ValidationResult::UnwrittenOutputFileFail))
       {
         for (const FrozenFileAndHash& output : node_data->m_OutputFiles)
         {

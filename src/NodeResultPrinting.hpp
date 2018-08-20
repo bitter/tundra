@@ -10,6 +10,17 @@ struct ExecResult;
 struct NodeData;
 struct BuildQueue;
 
+namespace MessageStatusLevel
+{
+  enum Enum
+  {
+    Success     = 0,
+    Failure     = 1,
+    Warning     = 2,
+    Info        = 3,
+  };
+}
+
 void InitNodeResultPrinting();
 void PrintNodeResult(
   ExecResult* result,
@@ -21,7 +32,8 @@ void PrintNodeResult(
   ValidationResult validationResult,
   bool* untouched_outputs);
 int PrintNodeInProgress(const NodeData* node_data, uint64_t time_of_start, const BuildQueue* queue);
-void PrintConcludingMessage(bool success, const char* formatString, ...);
+void PrintLineWithDurationAndAnnotation(uint64_t time_exec_started, int nodeCount, int max_nodes, MessageStatusLevel::Enum status_level, const char* annotation);
+void PrintServiceMessage(MessageStatusLevel::Enum statusLevel, const char* formatString, ...);
 void StripAnsiColors(char* buffer);
 }
 #endif

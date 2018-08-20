@@ -533,7 +533,7 @@ leave:
   {
     if (total_time < 60.0)
     {
-      PrintConcludingMessage(build_result == 0, "*** %s %s (%.2f seconds), %d items updated", buildTitle, BuildResult::Names[build_result], total_time, g_Stats.m_ExecCount);
+      PrintServiceMessage(build_result == 0 ? MessageStatusLevel::Success : MessageStatusLevel::Failure, "*** %s %s (%.2f seconds), %d items updated", buildTitle, BuildResult::Names[build_result], total_time, g_Stats.m_ExecCount);
     }
     else
     {
@@ -541,7 +541,7 @@ leave:
       int h = t / 3600; t -= h * 3600;
       int m = t /   60; t -= m *   60;
       int s = t;
-      PrintConcludingMessage(build_result == 0, "*** %s %s (%.2f seconds - %d:%02d:%02d), %d items updated", buildTitle, BuildResult::Names[build_result], total_time, h, m, s, g_Stats.m_ExecCount);
+      PrintServiceMessage(build_result == 0 ? MessageStatusLevel::Success : MessageStatusLevel::Failure, "*** %s %s (%.2f seconds - %d:%02d:%02d), %d items updated", buildTitle, BuildResult::Names[build_result], total_time, h, m, s, g_Stats.m_ExecCount);
     }
   }
 

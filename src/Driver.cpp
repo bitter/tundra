@@ -240,7 +240,7 @@ static bool DriverPrepareDag(Driver* self, const char* dag_fn)
 
   if (loadFrozenDataResult)
   {
-      if (self->m_DagData->m_ForceDagRebuild == 0)
+      if (self->m_DagData->m_ForceDagRebuild == 1)
         snprintf(out_of_date_reason, out_of_date_reason_length, "Frontend of %s ran because of the previous dag indicated it should not be recycled", dag_fn);
   }
 

@@ -227,8 +227,25 @@ static bool DriverPrepareDag(Driver* self, const char* dag_fn)
   const int out_of_date_reason_length = 500;
   char out_of_date_reason[out_of_date_reason_length+1];
 
+  snprintf(out_of_date_reason, out_of_date_reason_length, "Frontend of %s ran because of an unknown reason", dag_fn);
+
+  if (self->m_Options.m_ForceDagRegen)
+    snprintf(out_of_date_reason, out_of_date_reason_length, "Frontend of %s ran because of an ForceDagRegen option was chosen", dag_fn);
+
+
+  bool loadFrozenDataResult = LoadFrozenData<DagData>(dag_fn, &self->m_DagFile, &self->m_DagData );
+
+  if (!loadFrozenDataResult)
+    snprintf(out_of_date_reason, out_of_date_reason_length, "Frontend of %s ran because of no previous dag was found to recycle", dag_fn);
+
+  if (loadFrozenDataResult)
+  {
+      if (self->m_DagData->m_ForceDagRebuild == 0)
+        snprintf(out_of_date_reason, out_of_date_reason_length, "Frontend of %s ran because of the previous dag indicated it should not be recycled", dag_fn);
+  }
+
   // Try to use an existing DAG
-  if (!self->m_Options.m_ForceDagRegen && LoadFrozenData<DagData>(dag_fn, &self->m_DagFile, &self->m_DagData ) && self->m_DagData->m_ForceDagRebuild == 0)
+  if (!self->m_Options.m_ForceDagRegen && loadFrozenDataResult && self->m_DagData->m_ForceDagRebuild == 0)
   {
     uint64_t time_exec_started = TimerGet();
     bool checkResult = DriverCheckDagSignatures(self, out_of_date_reason, out_of_date_reason_length);

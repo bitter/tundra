@@ -48,7 +48,7 @@ static const char* s_BuildFile;
 static const char* s_DagFileName;
 
 static bool DriverPrepareDag(Driver* self, const char* dag_fn);
-static bool DriverCheckDagSignatures(Driver* self);
+static bool DriverCheckDagSignatures(Driver* self, char* out_of_date_reason, int out_of_date_reason_maxlength);
 
 void DriverInitializeTundraFilePaths(DriverOptions* driverOptions)
 {
@@ -224,10 +224,20 @@ bool DriverInitData(Driver* self)
 
 static bool DriverPrepareDag(Driver* self, const char* dag_fn)
 {
+  const int out_of_date_reason_length = 500;
+  char out_of_date_reason[out_of_date_reason_length+1];
+
   // Try to use an existing DAG
   if (!self->m_Options.m_ForceDagRegen && LoadFrozenData<DagData>(dag_fn, &self->m_DagFile, &self->m_DagData ) && self->m_DagData->m_ForceDagRebuild == 0)
   {
-    if (DriverCheckDagSignatures(self))
+    uint64_t time_exec_started = TimerGet();
+    bool checkResult = DriverCheckDagSignatures(self, out_of_date_reason, out_of_date_reason_length);
+    uint64_t now = TimerGet();
+    int duration = TimerDiffSeconds(time_exec_started, now);
+    if (duration > 1)
+      PrintLineWithDurationAndAnnotation(time_exec_started, 0, 0, MessageStatusLevel::Warning, "Calculating file and glob signatures. (unusually slow)");
+
+    if (checkResult)
     {
       Log(kDebug, "DAG signatures match - using existing data w/o Lua invocation");
       return true;
@@ -236,9 +246,12 @@ static bool DriverPrepareDag(Driver* self, const char* dag_fn)
     MmapFileUnmap(&self->m_DagFile);
   }
 
+  uint64_t time_exec_started = TimerGet();
   // We need to generate the DAG data
   if (!GenerateDag(s_BuildFile, dag_fn))
     return false;
+
+  PrintLineWithDurationAndAnnotation(time_exec_started, 0, 0, MessageStatusLevel::Success, out_of_date_reason);
 
   // The DAG had better map in now, or we can give up.
   if (!LoadFrozenData<DagData>(dag_fn, &self->m_DagFile, &self->m_DagData))
@@ -249,12 +262,16 @@ static bool DriverPrepareDag(Driver* self, const char* dag_fn)
 
   // In checked builds, make sure signatures are valid.
   // For Unity, our frontend is so slow, that we'll happily take a tiny extra hit to ensure our signatures are correct.
-  DriverCheckDagSignatures(self);
+  if (!DriverCheckDagSignatures(self, out_of_date_reason, out_of_date_reason_length))
+  {
+    printf("Abort: rerunning DriverCheckDagSignatures() in PrepareDag() caused it to fail because: %s", out_of_date_reason);
+    exit(1);
+  }
 
   return true;
 }
 
-static bool DriverCheckDagSignatures(Driver* self)
+static bool DriverCheckDagSignatures(Driver* self, char* out_of_date_reason, int out_of_date_reason_maxlength)
 {
   const DagData* dag_data = self->m_DagData;
 
@@ -285,6 +302,7 @@ static bool DriverCheckDagSignatures(Driver* self)
 
     if (info.m_Timestamp != timestamp)
     {
+      snprintf(out_of_date_reason, out_of_date_reason_maxlength, "Frontend of %s ran because this file has a different timestamp than it had previously: %s", s_DagFileName, sig.m_Path.Get());
       Log(kInfo, "DAG out of date: timestamp change for %s. was: %lu now: %lu", path, timestamp, info.m_Timestamp);
       return false;
     }
@@ -303,6 +321,7 @@ static bool DriverCheckDagSignatures(Driver* self)
       char stored[kDigestStringSize], actual[kDigestStringSize];
       DigestToString(stored, sig.m_Digest);
       DigestToString(actual, digest);
+      snprintf(out_of_date_reason, out_of_date_reason_maxlength, "Frontend of %s ran because this directory has a different file listing than it had previously: %s", s_DagFileName, sig.m_Path.Get());
       Log(kInfo, "DAG out of date: file glob change for %s (%s => %s)", sig.m_Path.Get(), stored, actual);
       return false;
     }

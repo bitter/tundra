@@ -167,9 +167,21 @@ static void PrintDiagnostic(const char* title, int content)
     PrintDiagnosticFormat(title, "%d", content);
 }
 
-void PrintConcludingMessage(bool success, const char* formatString, ...)
+static void EmitColorForLevel(MessageStatusLevel::Enum status_level)
 {
-    EmitColor(success ? GRN : RED);
+  if (status_level == MessageStatusLevel::Info)
+      EmitColor(WHT);
+    if (status_level == MessageStatusLevel::Warning)
+      EmitColor(YEL); 
+    if (status_level == MessageStatusLevel::Success)
+      EmitColor(GRN);
+    if (status_level == MessageStatusLevel::Failure)
+      EmitColor(RED);
+}
+
+void PrintServiceMessage(MessageStatusLevel::Enum status_level, const char* formatString, ...)
+{
+    EmitColorForLevel(status_level);
     va_list args;
     va_start(args, formatString);
     vfprintf(stdout, formatString, args);
@@ -197,6 +209,23 @@ static void PrintBufferTrimmed(OutputBufferData* buffer)
   printf("\n");
 }
 
+void PrintLineWithDurationAndAnnotation(uint64_t time_exec_started, int nodeCount, int max_nodes, MessageStatusLevel::Enum status_level, const char* annotation)
+{
+    int maxDigits = ceil(log10(max_nodes+1)); 
+
+    uint64_t now = TimerGet();
+    int duration = TimerDiffSeconds(time_exec_started, now);
+    
+    EmitColorForLevel(status_level);
+
+    printf("[");
+    if (status_level == MessageStatusLevel::Failure && !EmitColors)
+      printf("!FAILED! ");
+    printf("%*d/%d ", maxDigits, nodeCount, max_nodes);
+    printf("%2ds] ", duration);
+    EmitColor(RESET); 
+    printf("%s\n", annotation);   
+}
 
 void PrintNodeResult(
   ExecResult* result,
@@ -212,20 +241,8 @@ void PrintNodeResult(
     bool failed = result->m_ReturnCode != 0 || result->m_WasSignalled || validationResult >= ValidationResult::UnexpectedConsoleOutputFail;
     bool verbose = (failed && !result->m_WasAborted) || always_verbose;
 
-    int maxDigits = ceil(log10(queue->m_Config.m_MaxNodes+1)); 
+    PrintLineWithDurationAndAnnotation(time_exec_started, processedNodeCount, queue->m_Config.m_MaxNodes, failed ? MessageStatusLevel::Failure : MessageStatusLevel::Success, node_data->m_Annotation.Get());
 
-    uint64_t now = TimerGet();
-    int duration = TimerDiffSeconds(time_exec_started, now);
-    
-    EmitColor(failed ? RED : GRN);
-
-    printf("[");
-    if (failed && !EmitColors)
-      printf("!FAILED! ");
-    printf("%*d/%d ", maxDigits, processedNodeCount, queue->m_Config.m_MaxNodes);
-    printf("%2ds] ", duration);
-    EmitColor(RESET); 
-    printf("%s\n", (const char*)node_data->m_Annotation);   
     if (verbose)
     {
         PrintDiagnostic("CommandLine", cmd_line);
@@ -303,7 +320,7 @@ void PrintNodeResult(
         PrintBufferTrimmed(&result->m_OutputBuffer);
     
     total_number_node_results_printed++;
-    last_progress_message_of_any_job = now;
+    last_progress_message_of_any_job = TimerGet();
     last_progress_message_job = node_data;
 
     fflush(stdout);

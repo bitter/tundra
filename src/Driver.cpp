@@ -259,9 +259,10 @@ static bool DriverPrepareDag(Driver* self, const char* dag_fn)
       Log(kDebug, "DAG signatures match - using existing data w/o Lua invocation");
       return true;
     }
-
-    MmapFileUnmap(&self->m_DagFile);
   }
+
+  if (loadFrozenDataResult)
+    MmapFileUnmap(&self->m_DagFile);
 
   uint64_t time_exec_started = TimerGet();
   // We need to generate the DAG data

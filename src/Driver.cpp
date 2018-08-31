@@ -227,21 +227,21 @@ static bool DriverPrepareDag(Driver* self, const char* dag_fn)
   const int out_of_date_reason_length = 500;
   char out_of_date_reason[out_of_date_reason_length+1];
 
-  snprintf(out_of_date_reason, out_of_date_reason_length, "Frontend of %s ran because of an unknown reason", dag_fn);
+  snprintf(out_of_date_reason, out_of_date_reason_length, "Build frontend of %s ran (unknown reason)", dag_fn);
 
   if (self->m_Options.m_ForceDagRegen)
-    snprintf(out_of_date_reason, out_of_date_reason_length, "Frontend of %s ran because of an ForceDagRegen option was chosen", dag_fn);
+    snprintf(out_of_date_reason, out_of_date_reason_length, "Build frontend of %s ran (ForceDagRegen option used)", dag_fn);
 
 
   bool loadFrozenDataResult = LoadFrozenData<DagData>(dag_fn, &self->m_DagFile, &self->m_DagData );
 
   if (!loadFrozenDataResult)
-    snprintf(out_of_date_reason, out_of_date_reason_length, "Frontend of %s ran because of no previous dag was found to recycle", dag_fn);
+    snprintf(out_of_date_reason, out_of_date_reason_length, "Build frontend of %s ran (no suitable previous build dag file)", dag_fn);
 
   if (loadFrozenDataResult)
   {
       if (self->m_DagData->m_ForceDagRebuild == 1)
-        snprintf(out_of_date_reason, out_of_date_reason_length, "Frontend of %s ran because of the previous dag indicated it should not be recycled", dag_fn);
+        snprintf(out_of_date_reason, out_of_date_reason_length, "Build frontend of %s ran (previous dag file indicated it should not be reused)", dag_fn);
   }
 
   // Try to use an existing DAG
@@ -256,7 +256,7 @@ static bool DriverPrepareDag(Driver* self, const char* dag_fn)
 
     if (checkResult)
     {
-      Log(kDebug, "DAG signatures match - using existing data w/o Lua invocation");
+      Log(kDebug, "DAG signatures match - using existing data w/o build frontend invocation");
       return true;
     }
   }
@@ -310,7 +310,7 @@ static bool DriverCheckDagSignatures(Driver* self, char* out_of_date_reason, int
     return false;
   }
 
-  // Check timestamps of lua files used to produce the DAG
+  // Check timestamps of frontend files used to produce the DAG
   for (const DagFileSignature& sig : dag_data->m_FileSignatures)
   {
     const char* path = sig.m_Path;
@@ -320,7 +320,7 @@ static bool DriverCheckDagSignatures(Driver* self, char* out_of_date_reason, int
 
     if (info.m_Timestamp != timestamp)
     {
-      snprintf(out_of_date_reason, out_of_date_reason_maxlength, "Frontend of %s ran because this file has a different timestamp than it had previously: %s", s_DagFileName, sig.m_Path.Get());
+      snprintf(out_of_date_reason, out_of_date_reason_maxlength, "Build frontend of %s ran (build file timestamp changed: %s)", s_DagFileName, sig.m_Path.Get());
       Log(kInfo, "DAG out of date: timestamp change for %s. was: %lu now: %lu", path, timestamp, info.m_Timestamp);
       return false;
     }
@@ -328,7 +328,7 @@ static bool DriverCheckDagSignatures(Driver* self, char* out_of_date_reason, int
 
   // Check directory listing fingerprints
   // Note that the digest computation in here must match the one in LuaListDirectory
-  // The digests computed there are stored in the signature block by Lua code.
+  // The digests computed there are stored in the signature block by frontend code.
   for (const DagGlobSignature& sig : dag_data->m_GlobSignatures)
   {
     HashDigest digest = CalculateGlobSignatureFor(sig.m_Path, &self->m_Heap, &self->m_Allocator);
@@ -339,7 +339,7 @@ static bool DriverCheckDagSignatures(Driver* self, char* out_of_date_reason, int
       char stored[kDigestStringSize], actual[kDigestStringSize];
       DigestToString(stored, sig.m_Digest);
       DigestToString(actual, digest);
-      snprintf(out_of_date_reason, out_of_date_reason_maxlength, "Frontend of %s ran because this directory has a different file listing than it had previously: %s", s_DagFileName, sig.m_Path.Get());
+      snprintf(out_of_date_reason, out_of_date_reason_maxlength, "Build frontend of %s ran (folder contents changed: %s)", s_DagFileName, sig.m_Path.Get());
       Log(kInfo, "DAG out of date: file glob change for %s (%s => %s)", sig.m_Path.Get(), stored, actual);
       return false;
     }

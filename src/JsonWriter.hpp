@@ -30,7 +30,7 @@ void JsonWriteEndArray(JsonWriter* writer);
 
 void JsonWriteKeyName(JsonWriter* writer, const char* keyName);
 
-void JsonWriteValueString(JsonWriter* writer, const char* value);
+void JsonWriteValueString(JsonWriter* writer, const char* value, size_t maxLen = (size_t)-1);
 void JsonWriteValueInteger(JsonWriter* writer, int64_t value);
 
 void JsonWriteToFile(JsonWriter* writer, FILE* fp);

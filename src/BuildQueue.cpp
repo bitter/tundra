@@ -322,6 +322,19 @@ namespace t2
     }
   }
 
+  static void ReportValueWithOptionalTruncation(JsonWriter* msg, const char* keyName, const char* truncatedKeyName, const FrozenString& value)
+  {
+    size_t len = strlen(value);
+    const size_t maxLen = KB(64);
+    JsonWriteKeyName(msg, keyName);
+    JsonWriteValueString(msg, value, maxLen);
+    if (len > maxLen)
+    {
+      JsonWriteKeyName(msg, truncatedKeyName);
+      JsonWriteValueInteger(msg, 1);
+    }
+  }
+
   static void ReportInputSignatureChanges(JsonWriter* msg, NodeState* node, const NodeData* node_data, const NodeStateData* prev_state, StatCache* stat_cache, DigestCache* digest_cache, ScanCache* scan_cache, const uint32_t sha_extension_hashes[], int sha_extension_hash_count, ThreadState* thread_state)
   {
     if (strcmp(node_data->m_Action, prev_state->m_Action) != 0)
@@ -331,11 +344,8 @@ namespace t2
       JsonWriteKeyName(msg, "key");
       JsonWriteValueString(msg, "Action");
 
-      JsonWriteKeyName(msg, "value");
-      JsonWriteValueString(msg, node_data->m_Action);
-
-      JsonWriteKeyName(msg, "oldvalue");
-      JsonWriteValueString(msg, prev_state->m_Action);
+      ReportValueWithOptionalTruncation(msg, "value", "value_truncated", node_data->m_Action);
+      ReportValueWithOptionalTruncation(msg, "oldvalue", "oldvalue_truncated", prev_state->m_Action);
 
       JsonWriteEndObject(msg);
     }
@@ -349,11 +359,8 @@ namespace t2
         JsonWriteKeyName(msg, "key");
         JsonWriteValueString(msg, "PreAction");
 
-        JsonWriteKeyName(msg, "value");
-        JsonWriteValueString(msg, node_data->m_PreAction);
-
-        JsonWriteKeyName(msg, "oldvalue");
-        JsonWriteValueString(msg, prev_state->m_PreAction);
+        ReportValueWithOptionalTruncation(msg, "value", "value_truncated", node_data->m_PreAction);
+        ReportValueWithOptionalTruncation(msg, "oldvalue", "oldvalue_truncated", prev_state->m_PreAction);
 
         JsonWriteEndObject(msg);
       }

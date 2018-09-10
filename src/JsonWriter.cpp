@@ -89,14 +89,15 @@ void JsonWriteKeyName(JsonWriter* writer, const char* keyName)
     writer->m_PrependComma = false;
 }
 
-void JsonWriteValueString(JsonWriter* writer, const char* value)
+void JsonWriteValueString(JsonWriter* writer, const char* value, size_t maxLen)
 {
     if (writer->m_PrependComma)
       JsonWriteChar(writer, ',');
 
     JsonWriteChar(writer, '"');
 
-    while (*value != 0)
+    size_t len = 0;
+    while (*value != 0 && len < maxLen)
     {
         char ch = *(value++);
         if (ch == '"')
@@ -131,6 +132,7 @@ void JsonWriteValueString(JsonWriter* writer, const char* value)
         {
             JsonWriteChar(writer, ch);
         }
+        ++len;
     }
 
     JsonWriteChar(writer, '"');

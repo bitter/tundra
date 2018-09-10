@@ -523,6 +523,8 @@ namespace t2
 
     MutexUnlock(queue_lock);
 
+    ProfilerScope prof_scope("Tundra CheckInputSignature", thread_state->m_ThreadIndex);
+
     const BuildQueueConfig& config = queue->m_Config;
     StatCache* stat_cache = config.m_StatCache;
     DigestCache* digest_cache = config.m_DigestCache;

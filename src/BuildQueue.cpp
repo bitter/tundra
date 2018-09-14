@@ -862,18 +862,26 @@ namespace t2
       env_vars[i].m_Value = node_data->m_EnvVars[i].m_Value;
     }
 
-    for (const FrozenFileAndHash& output_file : node_data->m_OutputFiles)
-    {
-      PathBuffer output;
-      PathInit(&output, output_file.m_Filename);
+    auto EnsureParentDirExistsFor = [=](const FrozenFileAndHash& fileAndHash) -> bool {
+        PathBuffer output;
+        PathInit(&output, fileAndHash.m_Filename);
 
-      if (!MakeDirectoriesForFile(stat_cache, output))
-      {
-        Log(kError, "failed to create output directories for %s", output_file.m_Filename.Get());
-        MutexLock(queue_lock);
+        if (!MakeDirectoriesForFile(stat_cache, output))
+        {
+          Log(kError, "failed to create output directories for %s", fileAndHash.m_Filename.Get());
+          MutexLock(queue_lock);
+          return false;
+        }
+        return true;
+    };
+
+    for (const FrozenFileAndHash& output_file : node_data->m_OutputFiles)
+      if (!EnsureParentDirExistsFor(output_file))
         return BuildProgress::kFailed;
-      }
-    }
+
+    for (const FrozenFileAndHash& output_file : node_data->m_AuxOutputFiles)
+      if (!EnsureParentDirExistsFor(output_file))
+        return BuildProgress::kFailed;
 
     ExecResult result = { 0, false };
 

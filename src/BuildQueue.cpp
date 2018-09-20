@@ -1292,6 +1292,11 @@ namespace t2
       ThreadStateDestroy(&queue->m_ThreadState[i]);
     }
 
+    // Output any deferred error messages.
+    MutexLock(&queue->m_Lock);
+    PrintDeferredMessages(queue);
+    MutexUnlock(&queue->m_Lock);
+
     // Deallocate storage.
     MemAllocHeap* heap = queue->m_Config.m_Heap;
     HeapFree(heap, queue->m_ExpensiveWaitList);

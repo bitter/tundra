@@ -30,9 +30,10 @@ void PrintNodeResult(
   bool always_verbose,
   uint64_t time_exec_started,
   ValidationResult validationResult,
-  bool* untouched_outputs);
+  const bool* untouched_outputs);
 int PrintNodeInProgress(const NodeData* node_data, uint64_t time_of_start, const BuildQueue* queue);
-void PrintLineWithDurationAndAnnotation(uint64_t time_exec_started, int nodeCount, int max_nodes, MessageStatusLevel::Enum status_level, const char* annotation);
+void PrintDeferredMessages(BuildQueue* queue);
+void PrintLineWithDurationAndAnnotation(int duration, int nodeCount, int max_nodes, MessageStatusLevel::Enum status_level, const char* annotation);
 void PrintServiceMessage(MessageStatusLevel::Enum statusLevel, const char* formatString, ...);
 void StripAnsiColors(char* buffer);
 }

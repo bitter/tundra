@@ -103,6 +103,8 @@ namespace t2
 
   void BuildQueueDestroy(BuildQueue* queue);
 
+  bool HasBuildStoppingFailures(const BuildQueue* queue);
+
 }
 
 #endif

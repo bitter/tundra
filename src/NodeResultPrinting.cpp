@@ -223,8 +223,12 @@ void PrintLineWithDurationAndAnnotation(uint64_t time_exec_started, int nodeCoun
       printf("!FAILED! ");
     printf("%*d/%d ", maxDigits, nodeCount, max_nodes);
     printf("%2ds] ", duration);
-    EmitColor(RESET); 
-    printf("%s\n", annotation);   
+    // for failures, color the whole line red and only reset at the end
+    if (status_level != MessageStatusLevel::Failure)
+      EmitColor(RESET); 
+    printf("%s\n", annotation);
+    if (status_level == MessageStatusLevel::Failure)
+      EmitColor(RESET);
 }
 
 void PrintNodeResult(

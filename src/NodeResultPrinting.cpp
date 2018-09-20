@@ -395,7 +395,8 @@ void PrintNodeResult(
   else
   {
     // copy data needed for output that might be coming from temporary/local storage
-    data.cmd_line = StrDup(queue->m_Config.m_Heap, data.cmd_line);
+    if (data.cmd_line != nullptr)
+      data.cmd_line = StrDup(queue->m_Config.m_Heap, data.cmd_line);
     if (data.output_buffer != nullptr)
       data.output_buffer = StrDup(queue->m_Config.m_Heap, data.output_buffer);
     int n_outputs = node_data->m_OutputFiles.GetCount();

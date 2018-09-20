@@ -1139,6 +1139,18 @@ namespace t2
     return state;
   }
 
+  bool HasBuildStoppingFailures(const BuildQueue* queue)
+  {
+    if (queue->m_FailedNodeCount > 0)
+    {
+      if (0 == (queue->m_Config.m_Flags & BuildQueueConfig::kFlagContinueOnError))
+      {
+        return true;
+      }
+    }
+    return false;
+  }
+
   static bool ShouldKeepBuilding(BuildQueue* queue, int thread_index)
   {
     // Stop running if we were signalled
@@ -1146,13 +1158,8 @@ namespace t2
       return false;
 
     // Stop running if there are errors and we're stopping on the first error.
-    if (queue->m_FailedNodeCount > 0)
-    {
-      if (0 == (queue->m_Config.m_Flags & BuildQueueConfig::kFlagContinueOnError))
-      {
-        return false;
-      }
-    }
+    if (HasBuildStoppingFailures(queue))
+      return false;
 
     // If we're quitting, definitely stop building.
     if (queue->m_QuitSignalled)

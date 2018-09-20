@@ -235,11 +235,16 @@ void PrintNodeResult(
   bool always_verbose,
   uint64_t time_exec_started,
   ValidationResult validationResult,
-  bool* untouched_outputs)
+  const bool* untouched_outputs)
 {
     int processedNodeCount = ++queue->m_ProcessedNodeCount;
     bool failed = result->m_ReturnCode != 0 || result->m_WasSignalled || validationResult >= ValidationResult::UnexpectedConsoleOutputFail;
     bool verbose = (failed && !result->m_WasAborted) || always_verbose;
+
+    // If we already had build failures that will stop the build: do not emit further successful build step outputs.
+    // Makes it so that the failure is at the end of the build log.
+    if (!failed && !verbose && HasBuildStoppingFailures(queue))
+      return;
 
     PrintLineWithDurationAndAnnotation(time_exec_started, processedNodeCount, queue->m_Config.m_MaxNodes, failed ? MessageStatusLevel::Failure : MessageStatusLevel::Success, node_data->m_Annotation.Get());
 

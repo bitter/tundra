@@ -450,7 +450,7 @@ int PrintNodeInProgress(const NodeData* node_data, uint64_t time_of_start, const
     EmitColor(YEL);
     printf("[BUSY %*ds] ", maxDigits*2-1, seconds_job_has_been_running_for);
     EmitColor(RESET);
-    printf("%s\n", HasBuildStoppingFailures(queue) ? "...waiting for other build steps to finish" : (const char*)node_data->m_Annotation);
+    printf("%s\n", (const char*)node_data->m_Annotation);
     last_progress_message_of_any_job = now;
     last_progress_message_job = node_data;
 

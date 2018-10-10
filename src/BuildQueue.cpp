@@ -864,7 +864,14 @@ namespace t2
     }
 
     for (int i = 0; i < node_data->m_SharedResources.GetCount(); ++i)
-      SharedResourceAcquire(queue, &thread_state->m_LocalHeap, node_data->m_SharedResources[i]);
+    {
+      if (!SharedResourceAcquire(queue, &thread_state->m_LocalHeap, node_data->m_SharedResources[i]))
+      {
+        Log(kError, "failed to create shared resource %s", queue->m_Config.m_SharedResources[node_data->m_SharedResources[i]].m_Annotation.Get());
+        MutexLock(queue_lock);
+        return BuildProgress::kFailed;
+      }
+    }
 
     auto EnsureParentDirExistsFor = [=](const FrozenFileAndHash& fileAndHash) -> bool {
         PathBuffer output;

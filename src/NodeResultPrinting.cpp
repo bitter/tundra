@@ -225,23 +225,44 @@ static void TrimOutputBuffer(OutputBufferData* buffer)
   }
 }
 
-void PrintLineWithDurationAndAnnotation(int duration, int nodeCount, int max_nodes, MessageStatusLevel::Enum status_level, const char* annotation)
+static void PrintLineWithDurationAndAnnotation(int duration, const char* progressStr, MessageStatusLevel::Enum status_level, const char* annotation)
 {
-    int maxDigits = ceil(log10(max_nodes+1)); 
+  EmitColorForLevel(status_level);
 
-    EmitColorForLevel(status_level);
+  printf("[");
+  if (status_level == MessageStatusLevel::Failure && !EmitColors)
+    printf("!FAILED! ");
+  printf("%s ", progressStr);
+  printf("%2ds] ", duration);
+  // for failures, color the whole line red and only reset at the end
+  if (status_level != MessageStatusLevel::Failure)
+    EmitColor(RESET);
+  printf("%s\n", annotation);
+  if (status_level == MessageStatusLevel::Failure)
+    EmitColor(RESET);
+}
 
-    printf("[");
-    if (status_level == MessageStatusLevel::Failure && !EmitColors)
-      printf("!FAILED! ");
-    printf("%*d/%d ", maxDigits, nodeCount, max_nodes);
-    printf("%2ds] ", duration);
-    // for failures, color the whole line red and only reset at the end
-    if (status_level != MessageStatusLevel::Failure)
-      EmitColor(RESET); 
-    printf("%s\n", annotation);
-    if (status_level == MessageStatusLevel::Failure)
-      EmitColor(RESET);
+static void PrintLineWithDurationAndAnnotation(int duration, int nodeCount, int max_nodes, MessageStatusLevel::Enum status_level, const char* annotation)
+{
+    int maxDigits = ceil(log10(max_nodes+1));
+    char* progressStr = (char*)alloca(maxDigits * 2 + 2);
+    snprintf(progressStr, maxDigits * 2 + 2, "%*d/%d", maxDigits, nodeCount, max_nodes);
+    PrintLineWithDurationAndAnnotation(duration, progressStr, status_level, annotation);
+}
+
+void PrintNonNodeActionResult(int duration, int max_nodes, MessageStatusLevel::Enum status_level, const char* annotation, ExecResult* result)
+{
+  int maxDigits = ceil(log10(max_nodes + 1));
+  char* progressStr = (char*)alloca(maxDigits * 2 + 2);
+  memset(progressStr, ' ', maxDigits * 2 + 1);
+  progressStr[maxDigits * 2 + 1] = 0;
+
+  PrintLineWithDurationAndAnnotation(duration, progressStr, status_level, annotation);
+  if (result != nullptr && result->m_ReturnCode != 0)
+  {
+    TrimOutputBuffer(&result->m_OutputBuffer);
+    printf("%s\n", result->m_OutputBuffer.buffer);
+  }
 }
 
 static void PrintNodeResult(const NodeResultPrintData* data, BuildQueue* queue)

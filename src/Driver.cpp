@@ -252,7 +252,7 @@ static bool DriverPrepareDag(Driver* self, const char* dag_fn)
     uint64_t now = TimerGet();
     int duration = TimerDiffSeconds(time_exec_started, now);
     if (duration > 1)
-      PrintLineWithDurationAndAnnotation(duration, 0, 0, MessageStatusLevel::Warning, "Calculating file and glob signatures. (unusually slow)");
+      PrintNonNodeActionResult(duration, self->m_DagData->m_NodeCount, MessageStatusLevel::Warning, "Calculating file and glob signatures. (unusually slow)");
 
     if (checkResult)
     {
@@ -269,7 +269,7 @@ static bool DriverPrepareDag(Driver* self, const char* dag_fn)
   if (!GenerateDag(s_BuildFile, dag_fn))
     return false;
 
-  PrintLineWithDurationAndAnnotation(TimerDiffSeconds(time_exec_started, TimerGet()), 0, 0, MessageStatusLevel::Success, out_of_date_reason);
+  PrintNonNodeActionResult(TimerDiffSeconds(time_exec_started, TimerGet()), 1, MessageStatusLevel::Success, out_of_date_reason);
 
   // The DAG had better map in now, or we can give up.
   if (!LoadFrozenData<DagData>(dag_fn, &self->m_DagFile, &self->m_DagData))

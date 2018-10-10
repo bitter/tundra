@@ -1,0 +1,11 @@
+#include <cstdint>
+
+namespace t2
+{
+  struct MemAllocHeap;
+  struct SharedResourceData;
+  struct BuildQueue;
+
+  void SharedResourceAcquire(BuildQueue* queue, MemAllocHeap* heap, uint32_t sharedResourceIndex);
+  void SharedResourceDestroy(BuildQueue* queue, MemAllocHeap* heap, uint32_t sharedResourceIndex);
+}

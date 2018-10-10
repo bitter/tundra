@@ -825,6 +825,8 @@ BuildResult::Enum DriverBuild(Driver* self)
   queue_config.m_ShaDigestExtensionCount = dag->m_ShaExtensionHashes.GetCount();
   queue_config.m_ShaDigestExtensions     = dag->m_ShaExtensionHashes.GetArray();
   queue_config.m_MaxExpensiveCount       = max_expensive_count;
+  queue_config.m_SharedResources         = dag->m_SharedResources.GetArray();
+  queue_config.m_SharedResourcesCount    = dag->m_SharedResources.GetCount();
 
   if (self->m_Options.m_Verbose)
   {

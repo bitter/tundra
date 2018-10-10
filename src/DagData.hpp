@@ -121,6 +121,7 @@ struct NodeData
   FrozenArray<FrozenString>       m_AllowedOutputSubstrings;
   FrozenArray<EnvVarData>         m_EnvVars;
   FrozenPtr<ScannerData>          m_Scanner;
+  FrozenArray<int32_t>            m_SharedResources;
   uint32_t                        m_Flags;
   uint32_t                        m_OriginalIndex;
 };
@@ -128,6 +129,14 @@ struct NodeData
 struct PassData
 {
   FrozenString m_PassName;
+};
+
+struct SharedResourceData
+{
+  FrozenString m_Annotation;
+  FrozenString m_CreateAction;
+  FrozenString m_DestroyAction;
+  FrozenArray<EnvVarData> m_EnvVars;
 };
 
 struct DagData
@@ -143,6 +152,8 @@ struct DagData
   FrozenPtr<NodeData>           m_NodeData;
 
   FrozenArray<PassData>         m_Passes;
+
+  FrozenArray<SharedResourceData> m_SharedResources;
 
   int32_t                       m_ConfigCount;
   FrozenPtr<FrozenString>       m_ConfigNames;

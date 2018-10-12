@@ -104,7 +104,7 @@ LIBTUNDRA_SOURCES = \
 	Driver.cpp FileInfo.cpp Hash.cpp HashTable.cpp \
 	IncludeScanner.cpp JsonParse.cpp JsonWriter.cpp MemAllocHeap.cpp \
 	MemAllocLinear.cpp MemoryMappedFile.cpp PathUtil.cpp Profiler.cpp \
-	ScanCache.cpp Scanner.cpp SignalHandler.cpp StatCache.cpp \
+	ScanCache.cpp Scanner.cpp SignalHandler.cpp StatCache.cpp SharedResources.cpp \
 	TargetSelect.cpp Thread.cpp \
 	ExecUnix.cpp ExecWin32.cpp DigestCache.cpp FileSign.cpp \
 	HashSha1.cpp HashFast.cpp ConditionVar.cpp ReadWriteLock.cpp \

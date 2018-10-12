@@ -8,6 +8,7 @@
 #include "MemAllocLinear.hpp"
 #include "MemAllocHeap.hpp"
 #include "JsonWriter.hpp"
+#include "DagData.hpp"
 
 namespace t2
 {
@@ -50,6 +51,8 @@ namespace t2
     void*           m_FileSigningLog;
     Mutex*          m_FileSigningLogMutex;
     int32_t         m_MaxExpensiveCount;
+    const SharedResourceData* m_SharedResources;
+    int             m_SharedResourcesCount;
   };
 
   struct BuildQueue;
@@ -80,6 +83,8 @@ namespace t2
     int32_t            m_ExpensiveRunning;
     int32_t            m_ExpensiveWaitCount;
     NodeState        **m_ExpensiveWaitList;
+    uint32_t          *m_SharedResourcesCreated;
+    Mutex              m_SharedResourcesLock;
     bool               m_QuitSignalled;
   };
 

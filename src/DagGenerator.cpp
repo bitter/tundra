@@ -252,6 +252,7 @@ static bool WriteNodes(
     const JsonArrayValue *aux_outputs   = FindArrayValue(node, "AuxOutputs");
     const JsonArrayValue *env_vars      = FindArrayValue(node, "Env");
     const int             scanner_index = (int) FindIntValue(node, "ScannerIndex", -1);
+    const JsonArrayValue *shared_resources = FindArrayValue(node, "SharedResources");
     const JsonArrayValue *frontend_rsps = FindArrayValue(node, "FrontendResponseFiles");
     const JsonArrayValue *allowedOutputSubstrings = FindArrayValue(node, "AllowedOutputSubstrings");
     const char          *writetextfile_payload = FindStringValue(node, "WriteTextFilePayload");
@@ -355,6 +356,29 @@ static bool WriteNodes(
     }
     else
     {
+      BinarySegmentWriteNullPointer(node_data_seg);
+    }
+
+    if (shared_resources && shared_resources->m_Count > 0)
+    {
+      BinarySegmentAlign(array2_seg, 4);
+      BinarySegmentWriteInt32(node_data_seg, static_cast<int>(shared_resources->m_Count));
+      BinarySegmentWritePointer(node_data_seg, BinarySegmentPosition(array2_seg));
+      for (size_t i = 0, count = shared_resources->m_Count; i < count; ++i)
+      {
+        if (const JsonNumberValue* res_index = shared_resources->m_Values[i]->AsNumber())
+        {
+          BinarySegmentWriteInt32(array2_seg, static_cast<int>(res_index->m_Number));
+        }
+        else
+        {
+          return false;
+        }
+      }
+    }
+    else
+    {
+      BinarySegmentWriteInt32(node_data_seg, 0);
       BinarySegmentWriteNullPointer(node_data_seg);
     }
 
@@ -635,6 +659,82 @@ bool ComputeNodeGuids(const JsonArrayValue* nodes, int32_t* remap_table, TempNod
   return true;
 }
 
+bool WriteSharedResources(const JsonArrayValue* resources, BinarySegment* main_seg, BinarySegment* aux_seg, BinarySegment* aux2_seg, BinarySegment* str_seg)
+{
+  if (resources == nullptr || EmptyArray(resources))
+  {
+    BinarySegmentWriteInt32(main_seg, 0);
+    BinarySegmentWriteNullPointer(main_seg);
+    return true;
+  }
+
+  BinarySegmentWriteInt32(main_seg, (int)resources->m_Count);
+  BinarySegmentWritePointer(main_seg, BinarySegmentPosition(aux_seg));
+
+  for (size_t i = 0, count = resources->m_Count; i < count; ++i)
+  {
+    const JsonObjectValue* resource = resources->m_Values[i]->AsObject();
+    if (resource == nullptr)
+      return false;
+
+    const char* annotation = FindStringValue(resource, "Annotation");
+    const char* create_action = FindStringValue(resource, "CreateAction");
+    const char* destroy_action = FindStringValue(resource, "DestroyAction");
+    const JsonObjectValue* env = FindObjectValue(resource, "Env");
+
+    if (annotation == nullptr)
+      return false;
+
+    BinarySegmentWritePointer(aux_seg, BinarySegmentPosition(str_seg));
+    BinarySegmentWriteStringData(str_seg, annotation);
+
+    if (create_action != nullptr)
+    {
+      BinarySegmentWritePointer(aux_seg, BinarySegmentPosition(str_seg));
+      BinarySegmentWriteStringData(str_seg, create_action);
+    }
+    else
+    {
+      BinarySegmentWriteNullPointer(aux_seg);
+    }
+
+    if (destroy_action != nullptr)
+    {
+      BinarySegmentWritePointer(aux_seg, BinarySegmentPosition(str_seg));
+      BinarySegmentWriteStringData(str_seg, destroy_action);
+    }
+    else
+    {
+      BinarySegmentWriteNullPointer(aux_seg);
+    }
+
+    if (env != nullptr)
+    {
+      BinarySegmentWriteInt32(aux_seg, env->m_Count);
+      BinarySegmentWritePointer(aux_seg, BinarySegmentPosition(aux2_seg));
+
+      for (size_t j = 0; j < env->m_Count; ++j)
+      {
+        if (env->m_Values[j]->AsString() == nullptr)
+          return false;
+
+        BinarySegmentWritePointer(aux2_seg, BinarySegmentPosition(str_seg));
+        BinarySegmentWriteStringData(str_seg, env->m_Names[j]);
+
+        BinarySegmentWritePointer(aux2_seg, BinarySegmentPosition(str_seg));
+        BinarySegmentWriteStringData(str_seg, env->m_Values[j]->AsString()->m_String);
+      }
+    }
+    else
+    {
+      BinarySegmentWriteInt32(aux_seg, 0);
+      BinarySegmentWriteNullPointer(aux_seg);
+    }
+  }
+
+  return true;
+}
+
 
 static bool CompileDag(const JsonObjectValue* root, BinaryWriter* writer, MemAllocHeap* heap, MemAllocLinear* scratch)
 {
@@ -653,6 +753,7 @@ static bool CompileDag(const JsonObjectValue* root, BinaryWriter* writer, MemAll
   const JsonArrayValue  *nodes         = FindArrayValue(root, "Nodes");
   const JsonArrayValue  *passes        = FindArrayValue(root, "Passes");
   const JsonArrayValue  *scanners      = FindArrayValue(root, "Scanners");
+  const JsonArrayValue  *shared_resources = FindArrayValue(root, "SharedResources");
   const char*           identifier     = FindStringValue(root, "Identifier", "default");
 
   if (EmptyArray(passes))
@@ -715,6 +816,10 @@ static bool CompileDag(const JsonObjectValue* root, BinaryWriter* writer, MemAll
       return false;
     WriteStringPtr(aux_seg, str_seg, pass_name);
   }
+
+  // Write shared resources
+  if (!WriteSharedResources(shared_resources, main_seg, aux_seg, aux2_seg, str_seg))
+    return false;
 
   // Write configs
   const JsonObjectValue *setup       = FindObjectValue(root, "Setup");

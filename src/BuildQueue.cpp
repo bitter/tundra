@@ -17,6 +17,7 @@
 #include "NodeResultPrinting.hpp"
 #include "OutputValidation.hpp"
 #include "DigestCache.hpp"
+#include "SharedResources.hpp"
 
 #include <stdio.h>
 
@@ -862,6 +863,16 @@ namespace t2
       env_vars[i].m_Value = node_data->m_EnvVars[i].m_Value;
     }
 
+    for (int i = 0; i < node_data->m_SharedResources.GetCount(); ++i)
+    {
+      if (!SharedResourceAcquire(queue, &thread_state->m_LocalHeap, node_data->m_SharedResources[i]))
+      {
+        Log(kError, "failed to create shared resource %s", queue->m_Config.m_SharedResources[node_data->m_SharedResources[i]].m_Annotation.Get());
+        MutexLock(queue_lock);
+        return BuildProgress::kFailed;
+      }
+    }
+
     auto EnsureParentDirExistsFor = [=](const FrozenFileAndHash& fileAndHash) -> bool {
         PathBuffer output;
         PathInit(&output, fileAndHash.m_Filename);
@@ -1237,6 +1248,8 @@ namespace t2
     queue->m_ExpensiveRunning   = 0;
     queue->m_ExpensiveWaitCount = 0;
     queue->m_ExpensiveWaitList  = HeapAllocateArray<NodeState*>(heap, capacity);
+    queue->m_SharedResourcesCreated = HeapAllocateArrayZeroed<uint32_t>(heap, config->m_SharedResourcesCount);
+    MutexInit(&queue->m_SharedResourcesLock);
 
     CHECK(queue->m_Queue);
 
@@ -1292,6 +1305,11 @@ namespace t2
       ThreadStateDestroy(&queue->m_ThreadState[i]);
     }
 
+    // Destroy any shared resources that were created
+    for (int i = 0; i < config->m_SharedResourcesCount; ++i)
+      if (queue->m_SharedResourcesCreated[i] > 0)
+        SharedResourceDestroy(queue, config->m_Heap, i);
+
     // Output any deferred error messages.
     MutexLock(&queue->m_Lock);
     PrintDeferredMessages(queue);
@@ -1301,6 +1319,8 @@ namespace t2
     MemAllocHeap* heap = queue->m_Config.m_Heap;
     HeapFree(heap, queue->m_ExpensiveWaitList);
     HeapFree(heap, queue->m_Queue);
+    HeapFree(heap, queue->m_SharedResourcesCreated);
+    MutexDestroy(&queue->m_SharedResourcesLock);
 
     CondDestroy(&queue->m_WorkAvailable);
     MutexDestroy(&queue->m_Lock);

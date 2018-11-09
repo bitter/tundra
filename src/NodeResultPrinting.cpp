@@ -149,7 +149,7 @@ static void EmitColor(const char* colorsequence)
   }
 }
 
-#define RED   "\x1B[31m"
+#define RED   "\x1B[91m"
 #define GRN   "\x1B[32m"
 #define YEL   "\x1B[33m"
 #define BLU   "\x1B[34m"

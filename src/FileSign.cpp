@@ -89,7 +89,7 @@ void ComputeFileSignature(
   int                 sha_extension_hash_count,
   bool                force_use_timestamp)
 {
-  if (force_use_timestamp || ShouldUseSHA1SignatureFor(filename, sha_extension_hashes, sha_extension_hash_count))
+  if (!force_use_timestamp && ShouldUseSHA1SignatureFor(filename, sha_extension_hashes, sha_extension_hash_count))
     ComputeFileSignatureSha1(out, stat_cache, digest_cache, filename, fn_hash);
   else
     ComputeFileSignatureTimestamp(out, stat_cache, filename, fn_hash);

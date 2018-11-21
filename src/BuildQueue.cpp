@@ -256,9 +256,19 @@ namespace t2
     return MakeDirectoriesRecursive(stat_cache, path);
   }
 
-  static void CheckAndReportChangedInputFile(JsonWriter* msg, const char* filename, uint32_t filenameHash, uint64_t lastTimestamp, const char* dependencyType, DigestCache* digest_cache, StatCache* stat_cache, const uint32_t sha_extension_hashes[], uint32_t sha_extension_hash_count)
+  static void CheckAndReportChangedInputFile(
+    JsonWriter* msg,
+    const char* filename,
+    uint32_t filenameHash,
+    uint64_t lastTimestamp,
+    const char* dependencyType,
+    DigestCache* digest_cache,
+    StatCache* stat_cache,
+    const uint32_t sha_extension_hashes[],
+    uint32_t sha_extension_hash_count,
+    bool force_use_timestamp)
   {
-    if (ShouldUseSHA1SignatureFor(filename, sha_extension_hashes, sha_extension_hash_count))
+    if (!force_use_timestamp && ShouldUseSHA1SignatureFor(filename, sha_extension_hashes, sha_extension_hash_count))
     {
         // The file signature was computed from SHA1 digest, so look in the digest cache to see if we computed a new
         // hash for it that doesn't match the frozen data
@@ -305,7 +315,7 @@ namespace t2
       }
   }
 
-  static void ReportChangedInputFiles(JsonWriter* msg, const FrozenArray<NodeInputFileData>& files, const char* dependencyType, DigestCache* digest_cache, StatCache* stat_cache, const uint32_t sha_extension_hashes[], uint32_t sha_extension_hash_count)
+  static void ReportChangedInputFiles(JsonWriter* msg, const FrozenArray<NodeInputFileData>& files, const char* dependencyType, DigestCache* digest_cache, StatCache* stat_cache, const uint32_t sha_extension_hashes[], uint32_t sha_extension_hash_count, bool force_use_timestamp)
   {
     for (const NodeInputFileData& input : files)
     {
@@ -319,7 +329,8 @@ namespace t2
         digest_cache,
         stat_cache,
         sha_extension_hashes,
-        sha_extension_hash_count);
+        sha_extension_hash_count,
+        force_use_timestamp);
     }
   }
 
@@ -336,7 +347,17 @@ namespace t2
     }
   }
 
-  static void ReportInputSignatureChanges(JsonWriter* msg, NodeState* node, const NodeData* node_data, const NodeStateData* prev_state, StatCache* stat_cache, DigestCache* digest_cache, ScanCache* scan_cache, const uint32_t sha_extension_hashes[], int sha_extension_hash_count, ThreadState* thread_state)
+  static void ReportInputSignatureChanges(
+    JsonWriter* msg,
+    NodeState* node,
+    const NodeData* node_data,
+    const NodeStateData* prev_state,
+    StatCache* stat_cache,
+    DigestCache* digest_cache,
+    ScanCache* scan_cache,
+    const uint32_t sha_extension_hashes[],
+    int sha_extension_hash_count,
+    ThreadState* thread_state)
   {
     if (strcmp(node_data->m_Action, prev_state->m_Action) != 0)
     {
@@ -374,7 +395,7 @@ namespace t2
       const char* oldFilename = prev_state->m_InputFiles[i].m_Filename;
       explicitInputFilesListChanged |= (strcmp(filename, oldFilename) != 0);
     }
-
+    bool force_use_timestamp = node->m_Flags & NodeData::kFlagBanContentDigestForInputs;
     if (explicitInputFilesListChanged)
     {
       JsonWriteStartObject(msg);
@@ -422,7 +443,8 @@ namespace t2
           digest_cache,
           stat_cache,
           sha_extension_hashes,
-          sha_extension_hash_count
+          sha_extension_hash_count,
+          force_use_timestamp
         );
       }
 
@@ -430,7 +452,7 @@ namespace t2
       return;
     }
 
-    ReportChangedInputFiles(msg, prev_state->m_InputFiles, "explicit", digest_cache, stat_cache, sha_extension_hashes, sha_extension_hash_count);
+    ReportChangedInputFiles(msg, prev_state->m_InputFiles, "explicit", digest_cache, stat_cache, sha_extension_hashes, sha_extension_hash_count, force_use_timestamp);
 
     if (node_data->m_Scanner)
     {
@@ -514,7 +536,7 @@ namespace t2
       if (implicitFilesListChanged)
         return;
 
-      ReportChangedInputFiles(msg, prev_state->m_ImplicitInputFiles, "implicit", digest_cache, stat_cache, sha_extension_hashes, sha_extension_hash_count);
+      ReportChangedInputFiles(msg, prev_state->m_ImplicitInputFiles, "implicit", digest_cache, stat_cache, sha_extension_hashes, sha_extension_hash_count, force_use_timestamp);
     }
   }
 
@@ -558,7 +580,7 @@ namespace t2
 
     const ScannerData* scanner = node_data->m_Scanner;
 
-    bool force_use_timestamp = node_data->m_Flags | NodeData::kFlagBanContentDigestForInputs;
+    bool force_use_timestamp = node_data->m_Flags & NodeData::kFlagBanContentDigestForInputs;
 
     // TODO: The input files are not guaranteed to be in a stably sorted order. If the order changes then the input
     // signature might change, giving us a false-positive for the node needing to be rebuilt. We should look into

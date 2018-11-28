@@ -384,11 +384,13 @@ static bool WriteNodes(
 
     uint32_t flags = 0;
 
-    flags |= GetNodeFlag(node, "OverwriteOutputs", NodeData::kFlagOverwriteOutputs);
+    flags |= GetNodeFlag(node, "OverwriteOutputs", NodeData::kFlagOverwriteOutputs, true);
     flags |= GetNodeFlag(node, "PreciousOutputs",  NodeData::kFlagPreciousOutputs);
     flags |= GetNodeFlag(node, "Expensive",        NodeData::kFlagExpensive);
     flags |= GetNodeFlag(node, "AllowUnexpectedOutput", NodeData::kFlagAllowUnexpectedOutput, false);
     flags |= GetNodeFlag(node, "AllowUnwrittenOutputFiles", NodeData::kFlagAllowUnwrittenOutputFiles, false);
+    flags |= GetNodeFlag(node, "BanContentDigestForInputs", NodeData::kFlagBanContentDigestForInputs, false);
+
     if (writetextfile_payload != nullptr)
       flags |= NodeData::kFlagIsWriteTextFileAction;
     

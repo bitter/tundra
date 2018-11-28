@@ -86,9 +86,10 @@ void ComputeFileSignature(
   const char*         filename,
   uint32_t            fn_hash,
   const uint32_t      sha_extension_hashes[],
-  int                 sha_extension_hash_count)
+  int                 sha_extension_hash_count,
+  bool                force_use_timestamp)
 {
-  if (ShouldUseSHA1SignatureFor(filename, sha_extension_hashes, sha_extension_hash_count))
+  if (!force_use_timestamp && ShouldUseSHA1SignatureFor(filename, sha_extension_hashes, sha_extension_hash_count))
     ComputeFileSignatureSha1(out, stat_cache, digest_cache, filename, fn_hash);
   else
     ComputeFileSignatureTimestamp(out, stat_cache, filename, fn_hash);

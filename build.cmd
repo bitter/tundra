@@ -1,2 +1,2 @@
-call "%VS140COMNTOOLS%\..\..\VC\bin\amd64\vcvars64.bat"
+call "%VS2017INSTALLDIR%\VC\Auxiliary\Build\vcvars64.bat"
 perl build.pl

@@ -1308,7 +1308,7 @@ namespace t2
     SignalHandlerSetCondition(&queue->m_WorkAvailable);
 
     // Create build threads.
-    for (int i = 0, thread_count = config->m_ThreadCount; i < thread_count; ++i)
+    for (int i = 0, thread_count = queue->m_Config.m_ThreadCount; i < thread_count; ++i)
     {
       ThreadState* thread_state = &queue->m_ThreadState[i];
 
@@ -1334,7 +1334,7 @@ namespace t2
 
     CondBroadcast(&queue->m_WorkAvailable);
 
-    for (int i = 0, thread_count = queue->m_Config.m_ThreadCount; i < thread_count; ++i)
+    for (int i = 0, thread_count = config->m_ThreadCount; i < thread_count; ++i)
     {
       if (i > 0)
       {

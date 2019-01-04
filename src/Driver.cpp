@@ -1100,7 +1100,8 @@ bool DriverSaveBuildState(Driver* self)
           for (int i = 0, count = scan_output.m_IncludedFileCount; i < count; ++i)
           {
             const FileAndHash& path = scan_output.m_IncludedFiles[i];
-            HashSetInsert(&implicitDependencies, path.m_FilenameHash, path.m_Filename);
+            if (!HashSetLookup(&implicitDependencies, path.m_FilenameHash, path.m_Filename))
+              HashSetInsert(&implicitDependencies, path.m_FilenameHash, path.m_Filename);
           }
         }
       }

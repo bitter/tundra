@@ -580,11 +580,23 @@ namespace t2
 
     const ScannerData* scanner = node_data->m_Scanner;
 
+    // TODO: The input files are not guaranteed to be in a stably sorted order. If the order changes then the input
+    // TODO: signature might change, giving us a false-positive for the node needing to be rebuilt. We should look into
+    // TODO: enforcing a stable ordering, probably when we compile the DAG.
+
+    // We have a similar problem for implicit dependencies, but we cannot sort them at DAG compilation time because we
+    // don't know them then. We also might have duplicate dependencies - not when scanning a single file, but when we
+    // have multiple inputs for a single node (e.g. a cpp + a header which is being force-included) then we can end up
+    // with the same implicit dependency coming from multiple files. Conceptually it's not good to be adding the same
+    // file to the signature multiple times, so we would also like to deduplicate. We use a HashSet to collect all the
+    // implicit inputs, both to ensure we have no duplicate entries, and also so we can sort all the inputs before we
+    // add them to the signature.
+    HashSet<kFlagPathStrings> implicitDeps;
+    if (scanner)
+      HashSetInit(&implicitDeps, &thread_state->m_LocalHeap);
+
     bool force_use_timestamp = node_data->m_Flags & NodeData::kFlagBanContentDigestForInputs;
 
-    // TODO: The input files are not guaranteed to be in a stably sorted order. If the order changes then the input
-    // signature might change, giving us a false-positive for the node needing to be rebuilt. We should look into
-    // enforcing a stable ordering, probably when we compile the DAG.
     for (const FrozenFileAndHash& input : node_data->m_InputFiles)
     {
       // Add path and timestamp of every direct input file.
@@ -617,21 +629,34 @@ namespace t2
         {
           for (int i = 0, count = scan_output.m_IncludedFileCount; i < count; ++i)
           {
-            // Add path and timestamp of every indirect input file (#includes)
             const FileAndHash& path = scan_output.m_IncludedFiles[i];
-            HashAddPath(&sighash, path.m_Filename);
-            ComputeFileSignature(
-              &sighash,
-              stat_cache,
-              digest_cache,
-              path.m_Filename,
-              path.m_FilenameHash,
-              config.m_ShaDigestExtensions,
-              config.m_ShaDigestExtensionCount,
-              force_use_timestamp);
+            if (!HashSetLookup(&implicitDeps, path.m_FilenameHash, path.m_Filename))
+              HashSetInsert(&implicitDeps, path.m_FilenameHash, path.m_Filename);
           }
         }
       }
+    }
+
+    if (scanner)
+    {
+      // Add path and timestamp of every indirect input file (#includes).
+      // This will walk all the implicit dependencies in hash order.
+      HashSetWalk(&implicitDeps, [&](uint32_t, uint32_t hash, const char* filename)
+      {
+        HashAddPath(&sighash, filename);
+        ComputeFileSignature(
+          &sighash,
+          stat_cache,
+          digest_cache,
+          filename,
+          hash,
+          config.m_ShaDigestExtensions,
+          config.m_ShaDigestExtensionCount,
+          force_use_timestamp
+        );
+      });
+
+      HashSetDestroy(&implicitDeps);
     }
 
     for (const FrozenString& input : node_data->m_AllowedOutputSubstrings)

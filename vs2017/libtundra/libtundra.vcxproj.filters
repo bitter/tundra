@@ -243,4 +243,7 @@
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
+  <ItemGroup>
+    <Natvis Include="Tundra.natvis" />
+  </ItemGroup>
 </Project>

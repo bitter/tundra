@@ -164,6 +164,9 @@
     <ClCompile Include="..\..\src\OutputValidation.cpp" />
     <ClCompile Include="..\..\src\re.c" />
   </ItemGroup>
+  <ItemGroup>
+    <Natvis Include="Tundra.natvis" />
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>

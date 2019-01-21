@@ -33,6 +33,8 @@ void JsonWriteKeyName(JsonWriter* writer, const char* keyName);
 void JsonWriteValueString(JsonWriter* writer, const char* value, size_t maxLen = (size_t)-1);
 void JsonWriteValueInteger(JsonWriter* writer, int64_t value);
 
+void JsonWriteNewline(JsonWriter* writer);
+
 void JsonWriteToFile(JsonWriter* writer, FILE* fp);
 
 }

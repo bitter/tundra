@@ -43,6 +43,7 @@ struct DriverOptions
   const char *m_WorkingDir;
   const char *m_DAGFileName;
   const char *m_ProfileOutput;
+  const char *m_IncludesOutput;
 };
 
 void DriverOptionsInit(DriverOptions* self);
@@ -99,6 +100,7 @@ void DriverDestroy(Driver* self);
 void DriverShowHelp(Driver* self);
 
 void DriverShowTargets(Driver* self);
+bool DriverReportIncludes(Driver* self);
 
 void DriverReportStartup(Driver* self, const char** targets, int target_count);
 

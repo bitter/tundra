@@ -339,7 +339,10 @@ bool DriverInitData(Driver* self)
   if (!DriverPrepareDag(self, s_DagFileName))
     return false;
 
-  SetStructuredLogFileName(self->m_DagData->m_StructuredLogFileName);
+  // do not produce/overwrite structured log output file,
+  // if we're only reporting something and not doing an actual build
+  if (self->m_Options.m_IncludesOutput == nullptr && !self->m_Options.m_ShowHelp && !self->m_Options.m_ShowTargets)
+    SetStructuredLogFileName(self->m_DagData->m_StructuredLogFileName);
 
   DigestCacheInit(&self->m_DigestCache, MB(128), self->m_DagData->m_DigestCacheFileName);
 

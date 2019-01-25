@@ -52,6 +52,12 @@ static void JsonWriteChar(JsonWriter* writer, char ch)
   JsonWrite(writer, &ch, 1);
 }
 
+void JsonWriteNewline(JsonWriter* writer)
+{
+  JsonWrite(writer, "\n", 1);
+}
+
+
 void JsonWriteStartObject(JsonWriter* writer)
 {
     if (writer->m_PrependComma)

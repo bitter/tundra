@@ -76,6 +76,8 @@ static const struct OptionTemplate
     "Set working directory before building" },
   { 'R', "dagfile", OptionType::kString, offsetof(t2::DriverOptions, m_DAGFileName),
     "filename of where tundra should store the mmapped dag file"},
+  { 'I', "report-includes", OptionType::kString, offsetof(t2::DriverOptions, m_IncludesOutput),
+    "Output included files into a json file and exit" },
   { 'h', "help", OptionType::kBool, offsetof(t2::DriverOptions, m_ShowHelp),
     "Show help" },
   { 'k', "continue", OptionType::kBool, offsetof(t2::DriverOptions, m_ContinueOnError),
@@ -446,6 +448,13 @@ int main(int argc, char* argv[])
     DriverShowTargets(&driver);
     Log(kDebug, "Only showing targets - quitting");
     build_result = BuildResult::kOk;
+    goto leave;
+  }
+
+  if (driver.m_Options.m_IncludesOutput != nullptr)
+  {
+    build_result = DriverReportIncludes(&driver) ? BuildResult::kOk : BuildResult::kSetupError;
+    Log(kDebug, "Only reporting includes - quitting");
     goto leave;
   }
 

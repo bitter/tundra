@@ -70,10 +70,7 @@ static HANDLE GetOrCreateTempFileFor(int job_id)
     result = CreateFileA(temp_dir, access, sharemode, NULL, disp, flags, NULL);
 
     if (INVALID_HANDLE_VALUE == result)
-    {
-      fprintf(stderr, "failed to create temporary file %s\n", temp_dir);
-      return INVALID_HANDLE_VALUE;
-    }
+      CroakErrno("failed to create temporary file: %s", temp_dir);
 
     SetHandleInformation(result, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT);
 

@@ -50,7 +50,7 @@ static Mutex             s_FdMutex;
 //allocate one stdout and one stderr handle per job
 static HANDLE s_TempFiles[kMaxBuildThreads];
 
-static HANDLE GetOrCreateTempFileFor(int job_id)
+static HANDLE GetOrCreateTempFileFor(int job_id, const char* command_that_just_finished)
 {
   HANDLE result = s_TempFiles[job_id];
 
@@ -70,7 +70,16 @@ static HANDLE GetOrCreateTempFileFor(int job_id)
     result = CreateFileA(temp_dir, access, sharemode, NULL, disp, flags, NULL);
 
     if (INVALID_HANDLE_VALUE == result)
-      CroakErrno("failed to create temporary file: %s", temp_dir);
+    {
+      bool was_sharing_violation = GetLastError() == 0x00000020;
+      if (command_that_just_finished)
+        CroakErrno("failed to create temporary file: %s\n"
+          "The just completed command was: %s%s",
+          temp_dir, command_that_just_finished,
+          was_sharing_violation ? "\nMost likely, the build action spawned a lingering subprocess that is keeping stdout/stderr open (this is not allowed)." : "");
+      else
+        CroakErrno("failed to create temporary file: %s", temp_dir);
+    }
 
     SetHandleInformation(result, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT);
 
@@ -80,7 +89,7 @@ static HANDLE GetOrCreateTempFileFor(int job_id)
   return result;
 }
 
-static void CopyTempFileContentsIntoBufferAndPrepareFileForReuse(int job_id, OutputBufferData* outputBuffer, MemAllocHeap* heap)
+static void CopyTempFileContentsIntoBufferAndPrepareFileForReuse(int job_id, const char* command_that_just_finished, OutputBufferData* outputBuffer, MemAllocHeap* heap)
 {
   HANDLE tempFile = s_TempFiles[job_id];
 
@@ -109,9 +118,13 @@ static void CopyTempFileContentsIntoBufferAndPrepareFileForReuse(int job_id, Out
   }
   outputBuffer->buffer[outputBuffer->cursor] = 0;
 
-  // Truncate the temporary file for reuse
-  SetFilePointer(tempFile, 0, NULL, FILE_BEGIN);
-  SetEndOfFile(tempFile);
+  // Close file (which should trigger its deletion).
+  if (!CloseHandle(tempFile))
+    CroakErrnoAbort("CloseHandle failed");
+  s_TempFiles[job_id] = 0;
+
+  // Immediately recreate the file. If a lingering process is keeping the file open, that is a bug, and we want to find out immediately.
+  GetOrCreateTempFileFor(job_id, command_that_just_finished);
 }
 
 static struct Win32EnvBinding
@@ -437,7 +450,7 @@ ExecResult ExecuteProcess(
   void* attributeListAllocation = nullptr;
   if (!stream_to_stdout)
   {
-    sinfo.StartupInfo.hStdOutput = sinfo.StartupInfo.hStdError = GetOrCreateTempFileFor(job_id);
+    sinfo.StartupInfo.hStdOutput = sinfo.StartupInfo.hStdError = GetOrCreateTempFileFor(job_id, NULL);
     sinfo.StartupInfo.hStdInput = GetStdHandle(STD_INPUT_HANDLE);  
     sinfo.StartupInfo.dwFlags |= STARTF_USESTDHANDLES;
     creationFlags |= EXTENDED_STARTUPINFO_PRESENT;
@@ -521,7 +534,7 @@ ExecResult ExecuteProcess(
   CleanupResponseFile(responseFile);
 
   if (!stream_to_stdout)
-    CopyTempFileContentsIntoBufferAndPrepareFileForReuse(job_id, &result.m_OutputBuffer, heap);
+    CopyTempFileContentsIntoBufferAndPrepareFileForReuse(job_id, buffer, &result.m_OutputBuffer, heap);
 
   CloseHandle(pinfo.hProcess);
   CloseHandle(job_object);

@@ -97,7 +97,7 @@ void NORETURN CroakErrno(const char* fmt, ...)
   FormatMessageW(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
                NULL, lastError, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), 
                buf, sizeof(buf), NULL);
-  fprintf(stderr, "errno: %d (%s) GetLastError %d (%s)\n", errno, strerror(errno), lastError, buf);
+  fprintf(stderr, "errno: %d (%s) GetLastError %d (%ls)\n", errno, strerror(errno), lastError, buf);
 #else
   fprintf(stderr, "errno: %d (%s)\n", errno, strerror(errno));
 #endif

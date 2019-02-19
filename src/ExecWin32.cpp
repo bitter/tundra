@@ -103,7 +103,7 @@ static void CopyTempFileContentsIntoBufferAndPrepareFileForReuse(int job_id, Out
     DWORD spaceRemaining = (DWORD)outputBuffer->buffer_size - outputBuffer->cursor;
     DWORD amountRead = 0;
     if (!ReadFile(tempFile, outputBuffer->buffer + outputBuffer->cursor, spaceRemaining, &amountRead, NULL) || amountRead == 0)
-      CroakAbort("ReadFile from temporary file failed before we read all of its data");
+      CroakErrnoAbort("ReadFile from temporary file failed before we read all of its data");
     processed += amountRead;
     outputBuffer->cursor += amountRead;
   }
@@ -130,7 +130,7 @@ void ExecInit(void)
   s_TundraPid = GetCurrentProcessId();
 
   if (0 == GetTempPathA(sizeof(s_TemporaryDir), s_TemporaryDir))
-    Croak("error: couldn't get temporary directory path");
+    CroakErrno("couldn't get temporary directory path");
 
   MutexInit(&s_FdMutex);
 
@@ -456,7 +456,7 @@ ExecResult ExecuteProcess(
 
     //this is pretty crazy, but this call is _supposed_ to fail, and give us the correct attributeListSize, so we verify the returncode !=0
     if (InitializeProcThreadAttributeList(NULL, 1, 0, &attributeListSize))
-      CroakAbort("InitializeProcThreadAttributeList failed");
+      CroakErrnoAbort("InitializeProcThreadAttributeList failed");
 
     attributeListAllocation = HeapAllocate(heap, attributeListSize);
     sinfo.lpAttributeList = static_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(attributeListAllocation);
@@ -476,7 +476,7 @@ ExecResult ExecuteProcess(
     CroakAbort("env block error; too big?\n");
 
   if (!MultiByteToWideChar(CP_UTF8, 0, env_block, (int)env_block_length, env_block_wide, sizeof(env_block_wide)/sizeof(WCHAR)))
-    CroakAbort("Failed converting environment block to wide char\n");
+    CroakErrnoAbort("Failed converting environment block to wide char");
 
   ExecResult result;  
   char new_cmd[8192];
@@ -494,16 +494,16 @@ ExecResult ExecuteProcess(
 
   HANDLE job_object = CreateJobObject(NULL, NULL);
   if (!job_object)
-    CroakErrno("ERROR: Couldn't create job object.");
+    CroakErrno("Couldn't create job object.");
   
   WCHAR buffer_wide[sizeof(buffer) * 2];
   if (!MultiByteToWideChar(CP_UTF8, 0, buffer, (int)sizeof(buffer), buffer_wide, sizeof(buffer_wide) / sizeof(WCHAR)))
-    CroakAbort("Failed converting buffer block to wide char\n");
+    CroakErrnoAbort("Failed converting buffer block to wide char");
 
   PROCESS_INFORMATION pinfo;
 
   if (!CreateProcessW(NULL, buffer_wide, NULL, NULL, enherit_handles, creationFlags, env_block_wide, NULL, &sinfo.StartupInfo, &pinfo))
-    CroakAbort("ERROR: Couldn't launch process. Win32 error = %d", (int)GetLastError());
+    CroakErrnoAbort("Couldn't launch process");
 
   if (!stream_to_stdout)
   {

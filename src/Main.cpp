@@ -341,7 +341,7 @@ int main(int argc, char* argv[])
   if (options.m_WorkingDir)
   {
     if (!SetCwd(options.m_WorkingDir))
-      Croak("couldn't change directory to %s", options.m_WorkingDir);
+      CroakErrno("couldn't change directory to %s", options.m_WorkingDir);
   }
 
   if (options.m_ShowHelp)

@@ -50,7 +50,7 @@ static Mutex             s_FdMutex;
 //allocate one stdout and one stderr handle per job
 static HANDLE s_TempFiles[kMaxBuildThreads];
 
-static HANDLE GetOrCreateTempFileFor(int job_id)
+static HANDLE GetOrCreateTempFileFor(int job_id, const char* command_that_just_finished)
 {
   HANDLE result = s_TempFiles[job_id];
 
@@ -71,8 +71,14 @@ static HANDLE GetOrCreateTempFileFor(int job_id)
 
     if (INVALID_HANDLE_VALUE == result)
     {
-      fprintf(stderr, "failed to create temporary file %s\n", temp_dir);
-      return INVALID_HANDLE_VALUE;
+      bool was_sharing_violation = GetLastError() == 0x00000020;
+      if (command_that_just_finished)
+        CroakErrno("failed to create temporary file: %s\n"
+          "The just completed command was: %s%s",
+          temp_dir, command_that_just_finished,
+          was_sharing_violation ? "\nMost likely, the build action spawned a lingering subprocess that is keeping stdout/stderr open (this is not allowed)." : "");
+      else
+        CroakErrno("failed to create temporary file: %s", temp_dir);
     }
 
     SetHandleInformation(result, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT);
@@ -83,7 +89,7 @@ static HANDLE GetOrCreateTempFileFor(int job_id)
   return result;
 }
 
-static void CopyTempFileContentsIntoBufferAndPrepareFileForReuse(int job_id, OutputBufferData* outputBuffer, MemAllocHeap* heap)
+static void CopyTempFileContentsIntoBufferAndPrepareFileForReuse(int job_id, const char* command_that_just_finished, OutputBufferData* outputBuffer, MemAllocHeap* heap)
 {
   HANDLE tempFile = s_TempFiles[job_id];
 
@@ -106,15 +112,19 @@ static void CopyTempFileContentsIntoBufferAndPrepareFileForReuse(int job_id, Out
     DWORD spaceRemaining = (DWORD)outputBuffer->buffer_size - outputBuffer->cursor;
     DWORD amountRead = 0;
     if (!ReadFile(tempFile, outputBuffer->buffer + outputBuffer->cursor, spaceRemaining, &amountRead, NULL) || amountRead == 0)
-      CroakAbort("ReadFile from temporary file failed before we read all of its data");
+      CroakErrnoAbort("ReadFile from temporary file failed before we read all of its data");
     processed += amountRead;
     outputBuffer->cursor += amountRead;
   }
   outputBuffer->buffer[outputBuffer->cursor] = 0;
 
-  // Truncate the temporary file for reuse
-  SetFilePointer(tempFile, 0, NULL, FILE_BEGIN);
-  SetEndOfFile(tempFile);
+  // Close file (which should trigger its deletion).
+  if (!CloseHandle(tempFile))
+    CroakErrnoAbort("CloseHandle failed");
+  s_TempFiles[job_id] = 0;
+
+  // Immediately recreate the file. If a lingering process is keeping the file open, that is a bug, and we want to find out immediately.
+  GetOrCreateTempFileFor(job_id, command_that_just_finished);
 }
 
 static struct Win32EnvBinding
@@ -133,7 +143,7 @@ void ExecInit(void)
   s_TundraPid = GetCurrentProcessId();
 
   if (0 == GetTempPathA(sizeof(s_TemporaryDir), s_TemporaryDir))
-    Croak("error: couldn't get temporary directory path");
+    CroakErrno("couldn't get temporary directory path");
 
   MutexInit(&s_FdMutex);
 
@@ -440,7 +450,7 @@ ExecResult ExecuteProcess(
   void* attributeListAllocation = nullptr;
   if (!stream_to_stdout)
   {
-    sinfo.StartupInfo.hStdOutput = sinfo.StartupInfo.hStdError = GetOrCreateTempFileFor(job_id);
+    sinfo.StartupInfo.hStdOutput = sinfo.StartupInfo.hStdError = GetOrCreateTempFileFor(job_id, NULL);
     sinfo.StartupInfo.hStdInput = GetStdHandle(STD_INPUT_HANDLE);  
     sinfo.StartupInfo.dwFlags |= STARTF_USESTDHANDLES;
     creationFlags |= EXTENDED_STARTUPINFO_PRESENT;
@@ -459,7 +469,7 @@ ExecResult ExecuteProcess(
 
     //this is pretty crazy, but this call is _supposed_ to fail, and give us the correct attributeListSize, so we verify the returncode !=0
     if (InitializeProcThreadAttributeList(NULL, 1, 0, &attributeListSize))
-      CroakAbort("InitializeProcThreadAttributeList failed");
+      CroakErrnoAbort("InitializeProcThreadAttributeList failed");
 
     attributeListAllocation = HeapAllocate(heap, attributeListSize);
     sinfo.lpAttributeList = static_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(attributeListAllocation);
@@ -479,7 +489,7 @@ ExecResult ExecuteProcess(
     CroakAbort("env block error; too big?\n");
 
   if (!MultiByteToWideChar(CP_UTF8, 0, env_block, (int)env_block_length, env_block_wide, sizeof(env_block_wide)/sizeof(WCHAR)))
-    CroakAbort("Failed converting environment block to wide char\n");
+    CroakErrnoAbort("Failed converting environment block to wide char");
 
   ExecResult result;  
   char new_cmd[8192];
@@ -497,16 +507,16 @@ ExecResult ExecuteProcess(
 
   HANDLE job_object = CreateJobObject(NULL, NULL);
   if (!job_object)
-    CroakErrno("ERROR: Couldn't create job object.");
+    CroakErrno("Couldn't create job object.");
   
   WCHAR buffer_wide[sizeof(buffer) * 2];
   if (!MultiByteToWideChar(CP_UTF8, 0, buffer, (int)sizeof(buffer), buffer_wide, sizeof(buffer_wide) / sizeof(WCHAR)))
-    CroakAbort("Failed converting buffer block to wide char\n");
+    CroakErrnoAbort("Failed converting buffer block to wide char");
 
   PROCESS_INFORMATION pinfo;
 
   if (!CreateProcessW(NULL, buffer_wide, NULL, NULL, enherit_handles, creationFlags, env_block_wide, NULL, &sinfo.StartupInfo, &pinfo))
-    CroakAbort("ERROR: Couldn't launch process. Win32 error = %d", (int)GetLastError());
+    CroakErrnoAbort("Couldn't launch process");
 
   if (!stream_to_stdout)
   {
@@ -524,7 +534,7 @@ ExecResult ExecuteProcess(
   CleanupResponseFile(responseFile);
 
   if (!stream_to_stdout)
-    CopyTempFileContentsIntoBufferAndPrepareFileForReuse(job_id, &result.m_OutputBuffer, heap);
+    CopyTempFileContentsIntoBufferAndPrepareFileForReuse(job_id, buffer, &result.m_OutputBuffer, heap);
 
   CloseHandle(pinfo.hProcess);
   CloseHandle(job_object);

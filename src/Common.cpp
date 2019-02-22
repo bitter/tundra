@@ -51,6 +51,28 @@ static bool DebuggerAttached()
 #endif
 }
 
+static void NORETURN FlushAndAbort()
+{
+  // The C standard does not require 'abort' to flush stream buffers.
+  // On Windows at least, an explicit 'fflush' is required for stderr messages to actually be shown.
+  fflush(NULL);
+  abort();
+}
+
+static void PrintErrno()
+{
+#if TUNDRA_WIN32
+  wchar_t buf[256];
+  DWORD lastError = GetLastError();
+  FormatMessageW(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+    NULL, lastError, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+    buf, sizeof(buf), NULL);
+  fprintf(stderr, "errno: %d (%s) GetLastError: %d (0x%08X): %ls\n", errno, strerror(errno), (int)lastError, (unsigned int)lastError, buf);
+#else
+  fprintf(stderr, "errno: %d (%s)\n", errno, strerror(errno));
+#endif
+}
+
 void InitCommon(void)
 {
 #if defined(TUNDRA_WIN32)
@@ -65,48 +87,54 @@ void InitCommon(void)
 
 void NORETURN Croak(const char* fmt, ...)
 {
+  fputs("tundra: error: ", stderr);
   va_list args;
   va_start(args, fmt);
   vfprintf(stderr, fmt, args);
   va_end(args);
   fprintf(stderr, "\n");
   if (DebuggerAttached())
-    abort();
+    FlushAndAbort();
   else
     exit(1);
 }
 
 void NORETURN CroakErrno(const char* fmt, ...)
 {
+  fputs("tundra: error: ", stderr);
   va_list args;
   va_start(args, fmt);
   vfprintf(stderr, fmt, args);
   va_end(args);
   fprintf(stderr, "\n");
-#if TUNDRA_WIN32
-  wchar_t buf[256];
-  DWORD lastError = GetLastError();
-  FormatMessageW(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
-               NULL, lastError, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), 
-               buf, sizeof(buf), NULL);
-  fprintf(stderr, "errno: %d (%s) GetLastError %d (%s)\n", errno, strerror(errno), lastError, buf);
-#else
-  fprintf(stderr, "errno: %d (%s)\n", errno, strerror(errno));
-#endif
+  PrintErrno();
   if (DebuggerAttached())
-    abort();
+    FlushAndAbort();
   else
     exit(1);
 }
 
 void NORETURN CroakAbort(const char* fmt, ...)
 {
+  fputs("tundra: error: ", stderr);
   va_list args;
   va_start(args, fmt);
   vfprintf(stderr, fmt, args);
   va_end(args);
   fprintf(stderr, "\n");
-  abort();
+  FlushAndAbort();
+}
+
+void NORETURN CroakErrnoAbort(const char* fmt, ...)
+{
+  fputs("tundra: error: ", stderr);
+  va_list args;
+  va_start(args, fmt);
+  vfprintf(stderr, fmt, args);
+  va_end(args);
+  fprintf(stderr, "\n");
+  PrintErrno();
+  FlushAndAbort();
 }
 
 uint32_t Djb2Hash(const char *str_)
@@ -247,10 +275,10 @@ void GetCwd(char* buffer, size_t buffer_size)
 #if defined(TUNDRA_WIN32)
   DWORD res = GetCurrentDirectoryA((DWORD)buffer_size, buffer);
   if (0 == res || ((DWORD)buffer_size) <= res)
-    Croak("couldn't get working directory");
+    CroakErrno("couldn't get working directory");
 #elif defined(TUNDRA_UNIX)
   if (NULL == getcwd(buffer, buffer_size))
-    Croak("couldn't get working directory");
+    CroakErrno("couldn't get working directory");
 #else
 #error Unsupported platform
 #endif
@@ -275,14 +303,14 @@ const char* GetExePath()
   {
 #if defined(TUNDRA_WIN32)
     if (!GetModuleFileNameA(NULL, s_ExePath, (DWORD)sizeof s_ExePath))
-      Croak("couldn't get module filename");
+      CroakErrno("couldn't get module filename");
 #elif defined(TUNDRA_APPLE)
     uint32_t size = sizeof s_ExePath;
     if (0 != _NSGetExecutablePath(s_ExePath, &size))
       Croak("_NSGetExecutablePath failed");
 #elif defined(TUNDRA_LINUX)
     if (-1 == readlink("/proc/self/exe", s_ExePath, (sizeof s_ExePath) - 1))
-      Croak("couldn't read /proc/self/exe to get exe path: %s", strerror(errno));
+      CroakErrno("couldn't read /proc/self/exe to get exe path");
 #elif defined(TUNDRA_FREEBSD)
     size_t cb = sizeof s_ExePath;
     int mib[4];
@@ -291,7 +319,7 @@ const char* GetExePath()
     mib[2] = KERN_PROC_PATHNAME;
     mib[3] = -1;
     if (0 !=sysctl(mib, 4, s_ExePath, &cb, NULL, 0))
-      Croak("KERN_PROC_PATHNAME syscall failed");
+      CroakErrno("KERN_PROC_PATHNAME syscall failed");
 #else
 #error "unsupported platform"
 #endif

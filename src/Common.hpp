@@ -52,6 +52,9 @@ void NORETURN CroakErrno(const char* fmt, ...);
 // Abort the program with an error message on stderr
 void NORETURN CroakAbort(const char* fmt, ...);
 
+// Abort the program with an error message on stderr, also printing the errno/GetLastError() status
+void NORETURN CroakErrnoAbort(const char* fmt, ...);
+
 //-----------------------------------------------------------------------------
 // Logging
 //-----------------------------------------------------------------------------

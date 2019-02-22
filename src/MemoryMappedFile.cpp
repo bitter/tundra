@@ -73,7 +73,7 @@ void MmapFileUnmap(MemoryMappedFile* self)
     TimingScope timing_scope(&g_Stats.m_MunmapCalls, &g_Stats.m_MunmapTimeCycles);
 
     if (0 != munmap(self->m_Address, self->m_Size))
-      Croak("munmap(%p, %d) failed: %d", self->m_Address, (int) self->m_Size, errno);
+      CroakErrno("munmap(%p, %d) failed", self->m_Address, (int) self->m_Size);
 
     close((int) self->m_SysData[0]);
   }

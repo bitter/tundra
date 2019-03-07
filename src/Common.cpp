@@ -59,7 +59,7 @@ static void NORETURN FlushAndAbort()
   abort();
 }
 
-static void PrintErrno()
+void PrintErrno()
 {
 #if TUNDRA_WIN32
   wchar_t buf[256];

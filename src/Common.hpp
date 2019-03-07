@@ -43,6 +43,9 @@ void InitCommon(void);
 // Error handling
 //-----------------------------------------------------------------------------
 
+// Print the most recent OS error (errno, and GetLastError on Windows)
+void PrintErrno();
+
 // Terminate the program with an error message on stderr
 void NORETURN Croak(const char* fmt, ...);
 

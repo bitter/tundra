@@ -146,18 +146,31 @@ static HANDLE GetOrCreateTempFileFor(int job_id, const char* command_that_just_f
 
     if (INVALID_HANDLE_VALUE == result)
     {
-      DWORD error = GetLastError();
-      bool was_sharing_violation = error == 0x00000020;
-      ShowProgramsKeepingPathOpen(temp_dir);
-      SetLastError(error); // restore correct GetLastError value for CroakErrno.
-
+      bool was_sharing_violation = GetLastError() == 0x00000020;
+      fprintf(stderr, "tundra: error: failed to create temporary file: %s\n", temp_dir);
+      PrintErrno();
       if (command_that_just_finished)
-        CroakErrno("failed to create temporary file: %s\n"
-          "The just completed command was: %s%s",
-          temp_dir, command_that_just_finished,
-          was_sharing_violation ? "\nMost likely, the build action spawned a lingering subprocess that is keeping stdout/stderr open (this is not allowed)." : "");
-      else
-        CroakErrno("failed to create temporary file: %s", temp_dir);
+      {
+        fprintf(stderr, "The just completed command was:\n  %s\n", command_that_just_finished);
+        if (was_sharing_violation)
+          fputs("Most likely, the build action spawned a lingering subprocess that is "
+                "keeping stdout/stderr open. The build action should either wait for "
+                "such subprocesses to terminate before returning, or prevent them from "
+                "inheriting its stdout/stderr handles to begin with.\n", stderr);
+      }
+      ShowProgramsKeepingPathOpen(temp_dir);
+
+      if (!command_that_just_finished || !was_sharing_violation)
+        exit(1);
+
+      fputs("tundra: waiting for subprocesses to exit, and for the file to be deleted...\n", stderr);
+      fflush(stderr);
+      do
+      {
+        Sleep(1000);
+        result = CreateFileA(temp_dir, access, sharemode, NULL, disp, flags, NULL);
+      }
+      while (result == INVALID_HANDLE_VALUE);
     }
 
     SetHandleInformation(result, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT);

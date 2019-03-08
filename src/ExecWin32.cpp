@@ -1,4 +1,4 @@
-﻿/* exec-win32.c -- Windows subprocess handling
+/* exec-win32.c -- Windows subprocess handling
  *
  * This module is complicated due to how Win32 handles child I/O and because
  * its command processor cannot handle long command lines, requiring tools to
@@ -37,6 +37,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <windows.h>
+#include <RestartManager.h>
 #include <VersionHelpers.h>
 #include <thread>
 
@@ -49,6 +50,80 @@ static Mutex             s_FdMutex;
 
 //allocate one stdout and one stderr handle per job
 static HANDLE s_TempFiles[kMaxBuildThreads];
+
+static void ShowProgramsKeepingPathOpen(const char* path)
+{
+  const char* function;
+  DWORD error;
+
+  WCHAR pathWide[MAX_PATH];
+  if (!MultiByteToWideChar(CP_ACP, MB_ERR_INVALID_CHARS, path, -1, pathWide, ARRAY_SIZE(pathWide)))
+  {
+    function = "MultiByteToWideChar";
+    error = GetLastError();
+    PrintErrno();
+    goto exit;
+  }
+
+  DWORD dwSessionHandle;
+  WCHAR sessionKey[CCH_RM_SESSION_KEY + 1];
+  memset(sessionKey, 0, sizeof(sessionKey));
+  function = "RmStartSession";
+  error = RmStartSession(&dwSessionHandle, 0, sessionKey);
+  if (error) goto exit;
+
+  const WCHAR* rgsFileNames[] = { pathWide };
+  function = "RmRegisterResources";
+  error = RmRegisterResources(dwSessionHandle, ARRAY_SIZE(rgsFileNames), rgsFileNames, 0, NULL, 0, NULL);
+  if (error) goto endSession;
+
+  UINT nProcInfoNeeded;
+  RM_PROCESS_INFO rgAffectedApps[16];
+  UINT nProcInfo = ARRAY_SIZE(rgAffectedApps);
+  DWORD dwRebootReasons;
+  function = "RmGetList";
+  error = RmGetList(dwSessionHandle, &nProcInfoNeeded, &nProcInfo, rgAffectedApps, &dwRebootReasons);
+  if (error) goto endSession;
+
+  fprintf(stderr, "tundra: found %u processes keeping the file \"%s\" open (showing %u).\n",
+    (unsigned int)nProcInfoNeeded, path, (unsigned int)nProcInfo);
+
+  for (UINT i = 0; i < nProcInfo; ++i)
+  {
+    fprintf(stderr, "- \"%ls\" (PID %u)\n",
+      (wchar_t*)rgAffectedApps[i].strAppName,
+      (unsigned int)rgAffectedApps[i].Process.dwProcessId);
+
+    HANDLE hProcess;
+    FILETIME creationTime, exitTime, kernelTime, userTime;
+    WCHAR exeName[MAX_PATH];
+    DWORD dwSize = ARRAY_SIZE(exeName);
+
+    hProcess = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, rgAffectedApps[i].Process.dwProcessId);
+    if (hProcess
+      && GetProcessTimes(hProcess, &creationTime, &exitTime, &kernelTime, &userTime)
+      && CompareFileTime(&rgAffectedApps[i].Process.ProcessStartTime, &creationTime) == 0
+      && QueryFullProcessImageNameW(hProcess, 0, exeName, &dwSize))
+    {
+      fprintf(stderr, "    %ls\n", exeName);
+    }
+    else
+    {
+      fputs("    could not determine process image path: ", stderr);
+      PrintErrno();
+    }
+
+    if (hProcess)
+      CloseHandle(hProcess);
+  }
+
+endSession:
+  RmEndSession(dwSessionHandle);
+
+exit:
+  if (error)
+    fprintf(stderr, "tundra: failed to list processes keeping file open (%s returned error %d).\n", function, error);
+}
 
 static HANDLE GetOrCreateTempFileFor(int job_id, const char* command_that_just_finished)
 {
@@ -71,7 +146,11 @@ static HANDLE GetOrCreateTempFileFor(int job_id, const char* command_that_just_f
 
     if (INVALID_HANDLE_VALUE == result)
     {
-      bool was_sharing_violation = GetLastError() == 0x00000020;
+      DWORD error = GetLastError();
+      bool was_sharing_violation = error == 0x00000020;
+      ShowProgramsKeepingPathOpen(temp_dir);
+      SetLastError(error); // restore correct GetLastError value for CroakErrno.
+
       if (command_that_just_finished)
         CroakErrno("failed to create temporary file: %s\n"
           "The just completed command was: %s%s",

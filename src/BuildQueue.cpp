@@ -890,6 +890,7 @@ namespace t2
   {
     const NodeData    *node_data    = node->m_MmapData;
     const bool        isWriteFileAction = node->m_MmapData->m_Flags & NodeData::kFlagIsWriteTextFileAction;
+    const bool        dry_run       = (queue->m_Config.m_Flags & BuildQueueConfig::kFlagDryRun) != 0;
     const char        *cmd_line     = node_data->m_Action;
     const char        *pre_cmd_line = node_data->m_PreAction;
 
@@ -899,7 +900,7 @@ namespace t2
       return BuildProgress::kSucceeded;
     }
 
-    if (node->m_MmapData->m_Flags & NodeData::kFlagExpensive)
+    if (node->m_MmapData->m_Flags & NodeData::kFlagExpensive && !dry_run)
     {
       if (queue->m_ExpensiveRunning == queue->m_Config.m_MaxExpensiveCount)
       {
@@ -938,31 +939,34 @@ namespace t2
       }
     }
 
-    auto EnsureParentDirExistsFor = [=](const FrozenFileAndHash& fileAndHash) -> bool {
-        PathBuffer output;
-        PathInit(&output, fileAndHash.m_Filename);
+    if (!dry_run)
+    {
+      auto EnsureParentDirExistsFor = [=](const FrozenFileAndHash& fileAndHash) -> bool {
+          PathBuffer output;
+          PathInit(&output, fileAndHash.m_Filename);
 
-        if (!MakeDirectoriesForFile(stat_cache, output))
-        {
-          Log(kError, "failed to create output directories for %s", fileAndHash.m_Filename.Get());
-          MutexLock(queue_lock);
-          return false;
-        }
-        return true;
-    };
+          if (!MakeDirectoriesForFile(stat_cache, output))
+          {
+            Log(kError, "failed to create output directories for %s", fileAndHash.m_Filename.Get());
+            MutexLock(queue_lock);
+            return false;
+          }
+          return true;
+      };
 
-    for (const FrozenFileAndHash& output_file : node_data->m_OutputFiles)
-      if (!EnsureParentDirExistsFor(output_file))
-        return BuildProgress::kFailed;
+      for (const FrozenFileAndHash& output_file : node_data->m_OutputFiles)
+        if (!EnsureParentDirExistsFor(output_file))
+          return BuildProgress::kFailed;
 
-    for (const FrozenFileAndHash& output_file : node_data->m_AuxOutputFiles)
-      if (!EnsureParentDirExistsFor(output_file))
-        return BuildProgress::kFailed;
+      for (const FrozenFileAndHash& output_file : node_data->m_AuxOutputFiles)
+        if (!EnsureParentDirExistsFor(output_file))
+          return BuildProgress::kFailed;
+    }
 
     ExecResult result = { 0, false };
 
     // See if we need to remove the output files before running anything.
-    if (0 == (node_data->m_Flags & NodeData::kFlagOverwriteOutputs))
+    if (0 == (node_data->m_Flags & NodeData::kFlagOverwriteOutputs) && !dry_run)
     {
       for (const FrozenFileAndHash& output : node_data->m_OutputFiles)
       {
@@ -991,8 +995,11 @@ namespace t2
       TimingScope timing_scope(&g_Stats.m_ExecCount, &g_Stats.m_ExecTimeCycles);
       ProfilerScope prof_scope("Pre-build", job_id);
       last_cmd_line = pre_cmd_line;
-      result = ExecuteProcess(pre_cmd_line, env_count, env_vars, thread_state->m_Queue->m_Config.m_Heap, job_id, false, SlowCallback, &slowCallbackData, 1);
-      Log(kSpam, "Process return code %d", result.m_ReturnCode);
+      if (!dry_run)
+      {
+        result = ExecuteProcess(pre_cmd_line, env_count, env_vars, thread_state->m_Queue->m_Config.m_Heap, job_id, false, SlowCallback, &slowCallbackData, 1);
+        Log(kSpam, "Process return code %d", result.m_ReturnCode);
+      }
     }
 
     ValidationResult passedOutputValidation = ValidationResult::Pass;
@@ -1002,38 +1009,42 @@ namespace t2
       TimingScope timing_scope(&g_Stats.m_ExecCount, &g_Stats.m_ExecTimeCycles);
       ProfilerScope prof_scope(annotation, job_id);
 
-      uint64_t* pre_timestamps = (uint64_t*)LinearAllocate(&thread_state->m_ScratchAlloc, n_outputs, (size_t)sizeof(uint64_t));
+      if (!dry_run)
+      {
+        uint64_t* pre_timestamps = (uint64_t*)LinearAllocate(&thread_state->m_ScratchAlloc, n_outputs, (size_t)sizeof(uint64_t));
 
-      bool allowUnwrittenOutputFiles = (node_data->m_Flags & NodeData::kFlagAllowUnwrittenOutputFiles);
-      if (!allowUnwrittenOutputFiles)
-        for (int i = 0; i < n_outputs; i++)
+        bool allowUnwrittenOutputFiles = (node_data->m_Flags & NodeData::kFlagAllowUnwrittenOutputFiles);
+        if (!allowUnwrittenOutputFiles)
+          for (int i = 0; i < n_outputs; i++)
+          {
+            FileInfo info = GetFileInfo(node_data->m_OutputFiles[i].m_Filename);
+            pre_timestamps[i] = info.m_Timestamp;
+          }
+
+        if (isWriteFileAction)
+          result = WriteTextFile(node_data->m_Action, node_data->m_OutputFiles[0].m_Filename, thread_state->m_Queue->m_Config.m_Heap);
+        else
         {
-          FileInfo info = GetFileInfo(node_data->m_OutputFiles[i].m_Filename);
-          pre_timestamps[i] = info.m_Timestamp;
+          last_cmd_line = cmd_line;
+          result = ExecuteProcess(cmd_line, env_count, env_vars, thread_state->m_Queue->m_Config.m_Heap, job_id, false, SlowCallback, &slowCallbackData);
+          passedOutputValidation = ValidateExecResultAgainstAllowedOutput(&result, node_data);
         }
 
-      if (isWriteFileAction)
-        result = WriteTextFile(node_data->m_Action, node_data->m_OutputFiles[0].m_Filename, thread_state->m_Queue->m_Config.m_Heap);
-      else
-      {
-        last_cmd_line = cmd_line;
-        result = ExecuteProcess(cmd_line, env_count, env_vars, thread_state->m_Queue->m_Config.m_Heap, job_id, false, SlowCallback, &slowCallbackData);
-        passedOutputValidation = ValidateExecResultAgainstAllowedOutput(&result, node_data);
-      }
-
-      if (passedOutputValidation == ValidationResult::Pass && !allowUnwrittenOutputFiles)
-      {
-        for (int i = 0; i < n_outputs; i++)
+        if (passedOutputValidation == ValidationResult::Pass && !allowUnwrittenOutputFiles)
         {
-          FileInfo info = GetFileInfo(node_data->m_OutputFiles[i].m_Filename);
-          bool untouched = pre_timestamps[i] == info.m_Timestamp;
-          untouched_outputs[i] = untouched;
-          if (untouched)
-            passedOutputValidation = ValidationResult::UnwrittenOutputFileFail;
+          for (int i = 0; i < n_outputs; i++)
+          {
+            FileInfo info = GetFileInfo(node_data->m_OutputFiles[i].m_Filename);
+            bool untouched = pre_timestamps[i] == info.m_Timestamp;
+            untouched_outputs[i] = untouched;
+            if (untouched)
+              passedOutputValidation = ValidationResult::UnwrittenOutputFileFail;
+          }
         }
-      }
 
-      Log(kSpam, "Process return code %d", result.m_ReturnCode);
+        Log(kSpam, "Process return code %d", result.m_ReturnCode);
+
+      }
     }
 
     for (const FrozenFileAndHash& output : node_data->m_OutputFiles)

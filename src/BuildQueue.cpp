@@ -597,6 +597,9 @@ namespace t2
 
     bool force_use_timestamp = node_data->m_Flags & NodeData::kFlagBanContentDigestForInputs;
 
+    // Roll back scratch allocator after all file scans
+    MemAllocLinearScope alloc_scope(&thread_state->m_ScratchAlloc);
+
     for (const FrozenFileAndHash& input : node_data->m_InputFiles)
     {
       // Add path and timestamp of every direct input file.
@@ -613,9 +616,6 @@ namespace t2
 
       if (scanner)
       {
-        // Roll back scratch allocator between scans
-        MemAllocLinearScope alloc_scope(&thread_state->m_ScratchAlloc);
-
         ScanInput scan_input;
         scan_input.m_ScannerConfig = scanner;
         scan_input.m_ScratchAlloc  = &thread_state->m_ScratchAlloc;

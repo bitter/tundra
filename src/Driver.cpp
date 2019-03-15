@@ -979,6 +979,10 @@ BuildResult::Enum DriverBuild(Driver* self)
   {
     queue_config.m_Flags |= BuildQueueConfig::kFlagContinueOnError;
   }
+  if (self->m_Options.m_DryRun)
+  {
+    queue_config.m_Flags |= BuildQueueConfig::kFlagDryRun;
+  }
 
   if (self->m_Options.m_DebugSigning)
   {

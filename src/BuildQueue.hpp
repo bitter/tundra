@@ -33,7 +33,9 @@ namespace t2
       // Print annotations to the TTY as actions are executed
       kFlagEchoAnnotations    = 1 << 1,
       // Continue building even if there are errors.
-      kFlagContinueOnError    = 1 << 2
+      kFlagContinueOnError    = 1 << 2,
+      // Figure out which nodes need building, but do not actually execute any actions
+      kFlagDryRun             = 1 << 3
     };
 
     uint32_t        m_Flags;

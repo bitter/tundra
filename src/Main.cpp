@@ -482,7 +482,7 @@ int main(int argc, char* argv[])
 
   build_result = DriverBuild(&driver);
 
-  if (!DriverSaveBuildState(&driver))
+  if (!driver.m_Options.m_DryRun && !DriverSaveBuildState(&driver))
     Log(kError, "Couldn't save build state");
 
   if (!DriverSaveScanCache(&driver))

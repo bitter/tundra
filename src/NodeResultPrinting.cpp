@@ -100,7 +100,6 @@ void InitNodeResultPrinting()
     if (isatty(fileno(stdout)))
     {
         EmitColors = true;
-        return;
     }
 #endif
 

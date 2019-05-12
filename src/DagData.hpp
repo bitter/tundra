@@ -74,9 +74,10 @@ static_assert(sizeof(DagFileSignature) == 16, "struct layout");
 struct DagGlobSignature
 {
   FrozenString      m_Path;
+  FrozenString      m_Filter;
   HashDigest        m_Digest;
 };
-static_assert(sizeof(HashDigest) + sizeof(FrozenString) == sizeof(DagGlobSignature), "struct layout");
+static_assert(sizeof(HashDigest) + sizeof(FrozenString) + sizeof(FrozenString) == sizeof(DagGlobSignature), "struct layout");
 
 struct EnvVarData
 {

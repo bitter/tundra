@@ -993,10 +993,13 @@ static bool CompileDag(const JsonObjectValue* root, BinaryWriter* writer, MemAll
           fprintf(stderr, "bad GlobSignatures data\n");
           return false;
         }
+          
+        const char* filter = FindStringValue(sig, "Filter");
 
-        HashDigest digest = CalculateGlobSignatureFor(path, heap, scratch);
+        HashDigest digest = CalculateGlobSignatureFor(path, filter, heap, scratch);
 
         WriteStringPtr(aux_seg, str_seg, path);
+        WriteStringPtr(aux_seg, str_seg, filter);
         BinarySegmentWrite(aux_seg, (char*) &digest, sizeof digest);
       }
     }

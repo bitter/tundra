@@ -95,7 +95,7 @@ void ComputeFileSignature(
     ComputeFileSignatureTimestamp(out, stat_cache, filename, fn_hash);
 }
 
-t2::HashDigest CalculateGlobSignatureFor(const char* path, t2::MemAllocHeap* heap, t2::MemAllocLinear* scratch)
+t2::HashDigest CalculateGlobSignatureFor(const char* path, const char* filter, t2::MemAllocHeap* heap, t2::MemAllocLinear* scratch)
 {
     // Helper for directory iteration + memory allocation of strings.  We need to
     // buffer the filenames as we need them in sorted order to ensure the results
@@ -143,7 +143,7 @@ t2::HashDigest CalculateGlobSignatureFor(const char* path, t2::MemAllocHeap* hea
     ctx.Init(heap, scratch);
 
     // Get directory data
-    ListDirectory(path, &ctx, IterContext::Callback);
+    ListDirectory(path, filter, &ctx, IterContext::Callback);
 
     // Sort data
     qsort(ctx.m_Dirs.m_Storage, ctx.m_Dirs.m_Size, sizeof(const char*), IterContext::SortStringPtrs);

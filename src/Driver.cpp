@@ -470,7 +470,7 @@ static bool DriverCheckDagSignatures(Driver* self, char* out_of_date_reason, int
   // The digests computed there are stored in the signature block by frontend code.
   for (const DagGlobSignature& sig : dag_data->m_GlobSignatures)
   {
-    HashDigest digest = CalculateGlobSignatureFor(sig.m_Path, &self->m_Heap, &self->m_Allocator);
+    HashDigest digest = CalculateGlobSignatureFor(sig.m_Path, sig.m_Filter, &self->m_Heap, &self->m_Allocator);
 
     // Compare digest with the one stored in the signature block
     if (0 != memcmp(&digest, &sig.m_Digest, sizeof digest))

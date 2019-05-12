@@ -25,6 +25,7 @@ extern "C" {
 #include <fnmatch.h>
 #elif defined(TUNDRA_WIN32)
 #include <windows.h>
+#include <shlwapi.h>
 #endif
 
 namespace t2

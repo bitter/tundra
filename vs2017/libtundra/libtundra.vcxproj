@@ -64,7 +64,7 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
     </Link>
     <Lib>
-      <AdditionalDependencies>Rstrtmgr.lib</AdditionalDependencies>
+      <AdditionalDependencies>Rstrtmgr.lib;Shlwapi.lib</AdditionalDependencies>
     </Lib>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -85,7 +85,7 @@
       <OptimizeReferences>true</OptimizeReferences>
     </Link>
     <Lib>
-      <AdditionalDependencies>Rstrtmgr.lib</AdditionalDependencies>
+      <AdditionalDependencies>Rstrtmgr.lib;Shlwapi.lib</AdditionalDependencies>
     </Lib>
   </ItemDefinitionGroup>
   <ItemGroup>

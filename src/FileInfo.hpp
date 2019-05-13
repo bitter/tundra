@@ -33,6 +33,7 @@ bool ShouldFilter(const char* name, size_t len);
 
 void ListDirectory(
     const char* dir,
+    const char* filter,
     void* user_data,
     void (*callback)(void* user_data, const FileInfo& info, const char* path));
 

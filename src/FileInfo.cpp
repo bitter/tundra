@@ -22,8 +22,10 @@ extern "C" {
 #include <fcntl.h>
 #include <unistd.h>
 #include <dirent.h>
+#include <fnmatch.h>
 #elif defined(TUNDRA_WIN32)
 #include <windows.h>
+#include <shlwapi.h>
 #endif
 
 namespace t2
@@ -103,6 +105,7 @@ bool ShouldFilter(const char* name, size_t len)
 
 void ListDirectory(
     const char* path,
+    const char* filter,
     void* user_data,
     void (*callback)(void* user_data, const FileInfo& info, const char* path))
 {
@@ -133,8 +136,11 @@ void ListDirectory(
 
     if (ShouldFilter(entry.d_name, len))
       continue;
+        
+    if (filter && fnmatch(filter, entry.d_name, 0) != 0)
+      continue;
 
-		if (len + path_len + 2 >= sizeof(full_fn))
+	if (len + path_len + 2 >= sizeof(full_fn))
     {
 			Log(kWarning, "%s: name too long\n", entry.d_name);
       continue;
@@ -175,6 +181,8 @@ void ListDirectory(
 	do
 	{
     if (ShouldFilter(find_data.cFileName, strlen(find_data.cFileName)))
+      continue;
+    if (!PathMatchSpec(find_data.cFileName, filter))
       continue;
 
     static const uint64_t kEpochDiff = 0x019DB1DED53E8000LL; // 116444736000000000 nsecs

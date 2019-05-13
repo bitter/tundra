@@ -106,6 +106,7 @@ bool ShouldFilter(const char* name, size_t len)
 void ListDirectory(
     const char* path,
     const char* filter,
+    bool recurse,
     void* user_data,
     void (*callback)(void* user_data, const FileInfo& info, const char* path))
 {
@@ -137,8 +138,11 @@ void ListDirectory(
     if (ShouldFilter(entry.d_name, len))
       continue;
         
-    if (filter && fnmatch(filter, entry.d_name, 0) != 0)
-      continue;
+    bool matchesFilter = !filter || fnmatch(filter, entry.d_name, 0) == 0;
+    
+    // If we are recursing, we need to continue to find out whether this is a directory
+    if (!matchesFilter && !recurse)
+        continue;
 
 	if (len + path_len + 2 >= sizeof(full_fn))
     {
@@ -150,7 +154,12 @@ void ListDirectory(
 		strcpy(full_fn + path_len + 1, entry.d_name);
 
     FileInfo info = GetFileInfo(full_fn);
-    (*callback)(user_data, info, entry.d_name);
+
+    if (matchesFilter)
+        (*callback)(user_data, info, entry.d_name);
+        
+    if (recurse && info.m_Flags & FileInfo::kFlagDirectory)
+        ListDirectory(full_fn, filter, recurse, user_data, callback);
 	}
 
 	closedir(dir);
@@ -159,7 +168,15 @@ void ListDirectory(
 	WIN32_FIND_DATAA find_data;
 	char             scan_path[MAX_PATH];
 
-	_snprintf(scan_path, sizeof(scan_path), "%s/*", path);
+    const size_t pathLength = strlen(path);
+    if (pathLength >= sizeof(scan_path) + 3)
+    {
+        Log(kWarning, "Path too long: %s", path);
+        return;
+    }
+    
+    memcpy(scan_path, path, pathLength);
+    strcpy(scan_path + pathLength, "/*");
 
 	for (int i = 0; i < MAX_PATH; ++i)
 	{
@@ -182,8 +199,15 @@ void ListDirectory(
 	{
     if (ShouldFilter(find_data.cFileName, strlen(find_data.cFileName)))
       continue;
-    if (!PathMatchSpec(find_data.cFileName, filter))
+    bool matchesFilter = !filter || PathMatchSpec(find_data.cFileName, filter);
+    if (!matchesFilter && !recurse)
       continue;
+        
+    if (pathLength + strlen(find_data.cFileName) + 2 > MAX_PATH)
+    {
+        Log(kWarning, "Path too long: %s/%s", path, find_data.cFileName);
+        continue;
+    }
 
     static const uint64_t kEpochDiff = 0x019DB1DED53E8000LL; // 116444736000000000 nsecs
     static const uint64_t kRateDiff = 10000000; // 100 nsecs
@@ -200,8 +224,14 @@ void ListDirectory(
     else
       info.m_Flags |= FileInfo::kFlagFile;
 
-    (*callback)(user_data, info, find_data.cFileName);
+    strcpy(scan_path + path_length + 1, find_data.cFileName);
+        
+    if (matchesFilter)
+        (*callback)(user_data, info, scan_path);
 
+    if (recurse)
+        ListDirectory(scan_path, filter, recurse, user_data, callback);
+        
 	} while (FindNextFileA(h, &find_data));
 
 	if (!FindClose(h))

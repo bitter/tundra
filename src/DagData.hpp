@@ -76,8 +76,9 @@ struct DagGlobSignature
   FrozenString      m_Path;
   FrozenString      m_Filter;
   HashDigest        m_Digest;
+  uint32_t          m_Recurse;
 };
-static_assert(sizeof(HashDigest) + sizeof(FrozenString) + sizeof(FrozenString) == sizeof(DagGlobSignature), "struct layout");
+static_assert(sizeof(HashDigest) + sizeof(FrozenString) + sizeof(FrozenString) + sizeof(uint32_t) == sizeof(DagGlobSignature), "struct layout");
 
 struct EnvVarData
 {

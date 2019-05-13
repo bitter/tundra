@@ -995,12 +995,14 @@ static bool CompileDag(const JsonObjectValue* root, BinaryWriter* writer, MemAll
         }
           
         const char* filter = FindStringValue(sig, "Filter");
+        bool recurse = FindIntValue(sig, "Recurse", 0) == 1;
 
-        HashDigest digest = CalculateGlobSignatureFor(path, filter, heap, scratch);
+        HashDigest digest = CalculateGlobSignatureFor(path, filter, recurse, heap, scratch);
 
         WriteStringPtr(aux_seg, str_seg, path);
         WriteStringPtr(aux_seg, str_seg, filter);
         BinarySegmentWrite(aux_seg, (char*) &digest, sizeof digest);
+        BinarySegmentWriteInt32(aux_seg, recurse ? 1 : 0);
       }
     }
   }

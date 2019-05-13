@@ -168,15 +168,15 @@ void ListDirectory(
 	WIN32_FIND_DATAA find_data;
 	char             scan_path[MAX_PATH];
 
-    const size_t pathLength = strlen(path);
-    if (pathLength >= sizeof(scan_path) + 3)
+    const size_t path_length = strlen(path);
+    if (path_length >= sizeof(scan_path) + 3)
     {
         Log(kWarning, "Path too long: %s", path);
         return;
     }
     
-    memcpy(scan_path, path, pathLength);
-    strcpy(scan_path + pathLength, "/*");
+    memcpy(scan_path, path, path_length);
+    strcpy(scan_path + path_length, "/*");
 
 	for (int i = 0; i < MAX_PATH; ++i)
 	{
@@ -203,7 +203,7 @@ void ListDirectory(
     if (!matchesFilter && !recurse)
       continue;
         
-    if (pathLength + strlen(find_data.cFileName) + 2 > MAX_PATH)
+    if (path_length + strlen(find_data.cFileName) + 2 > MAX_PATH)
     {
         Log(kWarning, "Path too long: %s/%s", path, find_data.cFileName);
         continue;

@@ -23,7 +23,7 @@ void ComputeFileSignature(
   int                 sha_extension_hash_count,
   bool                force_use_timestamp);
 
-  HashDigest CalculateGlobSignatureFor(const char* path, const char* filter, MemAllocHeap* heap, MemAllocLinear* scratch);
+  HashDigest CalculateGlobSignatureFor(const char* path, const char* filter, bool recurse, MemAllocHeap* heap, MemAllocLinear* scratch);
 
   bool ShouldUseSHA1SignatureFor(const char* filename, const uint32_t sha_extension_hashes[], int sha_extension_hash_count);
 

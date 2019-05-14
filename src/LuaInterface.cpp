@@ -241,7 +241,7 @@ static int LuaListDirectory(lua_State* L)
   // Push file result table on stack
   lua_newtable(L);
 
-  ListDirectory(dir, nullptr, L, OnFileIter);
+  ListDirectory(dir, nullptr, false, L, OnFileIter);
 
   // Sort both tables
   lua_getglobal(L, "table");

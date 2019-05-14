@@ -95,7 +95,7 @@ void ComputeFileSignature(
     ComputeFileSignatureTimestamp(out, stat_cache, filename, fn_hash);
 }
 
-t2::HashDigest CalculateGlobSignatureFor(const char* path, const char* filter, t2::MemAllocHeap* heap, t2::MemAllocLinear* scratch)
+t2::HashDigest CalculateGlobSignatureFor(const char* path, const char* filter, bool recurse, t2::MemAllocHeap* heap, t2::MemAllocLinear* scratch)
 {
     // Helper for directory iteration + memory allocation of strings.  We need to
     // buffer the filenames as we need them in sorted order to ensure the results
@@ -134,40 +134,57 @@ t2::HashDigest CalculateGlobSignatureFor(const char* path, const char* filter, t
         return strcmp(*(const char**)l, *(const char**)r);
       }
     };
-
-    // Set up to rewind allocator for each loop iteration
-    MemAllocLinearScope mem_scope(scratch);
-
-    // Set up context
-    IterContext ctx;
-    ctx.Init(heap, scratch);
-
-    // Get directory data
-    ListDirectory(path, filter, &ctx, IterContext::Callback);
-
-    // Sort data
-    qsort(ctx.m_Dirs.m_Storage, ctx.m_Dirs.m_Size, sizeof(const char*), IterContext::SortStringPtrs);
-    qsort(ctx.m_Files.m_Storage, ctx.m_Files.m_Size, sizeof(const char*), IterContext::SortStringPtrs);
-
-    // Compute digest
+    
     HashState h;
     HashInit(&h);
-    for (const char* p : ctx.m_Dirs)
+    
+    FileInfo pathInfo = GetFileInfo(path);
+    HashAddInteger(&h, pathInfo.Exists() ? 1 : 0);
+    HashAddInteger(&h, pathInfo.IsDirectory() ? 1 : 0);
+    HashAddSeparator(&h);
+    
+    if (pathInfo.Exists() && pathInfo.IsDirectory())
     {
-      HashAddPath(&h, p);
-      HashAddSeparator(&h);
-    }
+        // Set up to rewind allocator for each loop iteration
+        MemAllocLinearScope mem_scope(scratch);
 
-    for (const char* p : ctx.m_Files)
+        // Set up context
+        IterContext ctx;
+        ctx.Init(heap, scratch);
+
+        // Get directory data
+        ListDirectory(path, filter, recurse, &ctx, IterContext::Callback);
+
+        // Sort data
+        qsort(ctx.m_Dirs.m_Storage, ctx.m_Dirs.m_Size, sizeof(const char*), IterContext::SortStringPtrs);
+        qsort(ctx.m_Files.m_Storage, ctx.m_Files.m_Size, sizeof(const char*), IterContext::SortStringPtrs);
+
+        // Compute digest
+        for (const char* p : ctx.m_Dirs)
+        {
+          HashAddPath(&h, p);
+          HashAddSeparator(&h);
+        }
+        
+        // Add an extra separator to catch a directory that turned into a file
+        HashAddSeparator(&h);
+
+        for (const char* p : ctx.m_Files)
+        {
+          HashAddPath(&h, p);
+          HashAddSeparator(&h);
+        }
+        
+        ctx.Destroy();
+    }
+    else if (pathInfo.IsFile())
     {
-      HashAddPath(&h, p);
-      HashAddSeparator(&h);
+        HashAddInteger(&h, pathInfo.m_Timestamp);
     }
 
     HashDigest digest;
     HashFinalize(&h, &digest);
 
-    ctx.Destroy();
     return digest;
 }
 

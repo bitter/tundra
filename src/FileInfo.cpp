@@ -229,7 +229,7 @@ void ListDirectory(
     if (matchesFilter)
         (*callback)(user_data, info, scan_path);
 
-    if (recurse)
+    if (recurse && info.m_Flags & FileInfo::kFlagDirectory)
         ListDirectory(scan_path, filter, recurse, user_data, callback);
         
 	} while (FindNextFileA(h, &find_data));

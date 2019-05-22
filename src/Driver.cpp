@@ -1519,12 +1519,21 @@ void DriverRemoveStaleOutputs(Driver* self)
     return strlen(r) < strlen(l);
   });
 
-  for (uint32_t i = 0, nuke_count = nuke_table.m_RecordCount; i < nuke_count; ++i)
+  int nuke_count = nuke_table.m_RecordCount;
+  uint64_t time_exec_started = TimerGet();
+  for (uint32_t i = 0; i < nuke_count; ++i)
   {
     Log(kDebug, "cleaning up %s", paths[i]);
     RemoveFileOrDir(paths[i]);
   }
 
+  if (nuke_count > 0)
+  {
+    char buffer[2000];
+    snprintf(buffer, sizeof(buffer), "Delete %d artifact files that are no longer in use. (like %s)", paths[0]);
+    PrintNonNodeActionResult(TimerDiffSeconds(time_exec_started, TimerGet()), self->m_Nodes.m_Size, MessageStatusLevel::Success, buffer);
+  }
+ 
   HashSetDestroy(&nuke_table);
   HashSetDestroy(&file_table);
 }

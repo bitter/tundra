@@ -460,7 +460,6 @@ int main(int argc, char* argv[])
 
   DriverReportStartup(&driver, (const char**) argv, argc);
 
-  DriverRemoveStaleOutputs(&driver);
 
   // Prepare list of nodes to build/clean/rebuild
   if (!DriverPrepareNodes(&driver, (const char**) argv, argc))
@@ -468,6 +467,8 @@ int main(int argc, char* argv[])
     Log(kError, "couldn't set up list of targets to build");
     goto leave;
   }
+
+  DriverRemoveStaleOutputs(&driver);
 
   if (driver.m_Options.m_Clean || driver.m_Options.m_Rebuild)
   {

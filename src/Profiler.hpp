@@ -16,13 +16,13 @@ namespace t2
   void ProfilerInit(const char* fileName, int threadCount);
   void ProfilerDestroy();
 
-  void ProfilerBeginImpl(const char* name, int threadIndex);
+  void ProfilerBeginImpl(const char* name, int threadIndex, const char* info, const char* color = nullptr);
   void ProfilerEndImpl(int threadIndex);
 
-  inline void ProfilerBegin(const char* name, int threadIndex)
+  inline void ProfilerBegin(const char* name, int threadIndex, const char* info = nullptr, const char* color = nullptr)
   {
     if (g_ProfilerEnabled)
-      ProfilerBeginImpl(name, threadIndex);
+      ProfilerBeginImpl(name, threadIndex, info, color);
   }
 
   inline void ProfilerEnd(int threadIndex)
@@ -34,10 +34,11 @@ namespace t2
   struct ProfilerScope
   {
     int m_ThreadIndex;
-    ProfilerScope(const char* name, int threadIndex)
+    
+    ProfilerScope(const char* name, int threadIndex, const char* info = nullptr, const char* color = nullptr)
     {
       m_ThreadIndex = threadIndex;
-      ProfilerBegin(name, threadIndex);
+      ProfilerBegin(name, threadIndex, info, color);
     }
 
     ~ProfilerScope()

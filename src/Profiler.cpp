@@ -16,6 +16,7 @@ namespace t2
     uint64_t    m_Duration;
     const char* m_Name;
     const char* m_Info;
+    const char* m_Color;
   };
 
   struct ProfilerThread
@@ -120,7 +121,16 @@ namespace t2
         char info[1024];
         EscapeString(evt.m_Name, name, sizeof(name));
         EscapeString(evt.m_Info, info, sizeof(info));
-        fprintf(f, ",{ \"pid\":1, \"tid\":%d, \"ts\":%.0f, \"dur\":%.0f, \"ph\":\"X\", \"name\": \"%s\", \"args\": { \"durationMS\":%.0f, \"detail\":\"%s\" }}\n", i, timeUs, durUs, name, durUs*0.001, info);
+
+        const char* cnameEntry = "";
+        char buffer[100];
+        if (evt.m_Color != nullptr)
+        {
+          snprintf(buffer, sizeof(buffer), "\"cname\":\"%s\", ", evt.m_Color);
+          cnameEntry = buffer;
+        }
+
+        fprintf(f, ",{ \"pid\":1, \"tid\":%d, \"ts\":%.0f, \"dur\":%.0f, \"ph\":\"X\", \"name\": \"%s\", %s \"args\": { \"durationMS\":%.0f, \"detail\":\"%s\" }}\n", i, timeUs, durUs, name, cnameEntry, durUs*0.001, info);
       }
     }
     fputs("\n]\n", f);
@@ -146,7 +156,7 @@ namespace t2
     for (int i = 0; i < s_ProfilerState.m_ThreadCount; ++i)
     {
       ProfilerThread& thread = s_ProfilerState.m_Threads[i];
-      Log(kSpam, "profiler: thread %i had %d events, %.1f KB strings", i, thread.m_EventCount, double(thread.m_ScratchStrings.m_Offset)/1024.0);
+      Log(kSpam, "profiler: thread %i had %d events, %.1f KB strings", i, thread.m_EventCount, double(thread.m_ScratchStrings.m_Offset) / 1024.0);
       HeapFree(&s_ProfilerState.m_Heap, thread.m_Events);
       LinearAllocDestroy(&thread.m_ScratchStrings);
     }
@@ -155,11 +165,11 @@ namespace t2
     HeapDestroy(&s_ProfilerState.m_Heap);
   }
 
-  void ProfilerBeginImpl(const char* name, int threadIndex)
+  void ProfilerBeginImpl(const char* name, int threadIndex, const char* info, const char* color)
   {
     CHECK(g_ProfilerEnabled);
     CHECK(threadIndex >= 0 && threadIndex < s_ProfilerState.m_ThreadCount);
-    ProfilerThread& thread = s_ProfilerState.m_Threads[threadIndex];
+    ProfilerThread & thread = s_ProfilerState.m_Threads[threadIndex];
     CHECK(!thread.m_IsBegin);
     thread.m_IsBegin = true;
     if (thread.m_EventCount >= kProfilerThreadMaxEvents)
@@ -169,13 +179,14 @@ namespace t2
     }
     ProfilerEvent& evt = thread.m_Events[thread.m_EventCount++];
     evt.m_Time = TimerGet();
+    evt.m_Color = color;
 
     // split input name by first space
     const char* nextWord = strchr(name, ' ');
-    if (nextWord == nullptr)
+    if (nextWord == nullptr || info != nullptr)
     {
       evt.m_Name = StrDup(&thread.m_ScratchStrings, name);
-      evt.m_Info = "";
+      evt.m_Info = info != nullptr ? StrDup(&thread.m_ScratchStrings, info) : "";
     }
     else
     {

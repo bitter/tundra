@@ -41,6 +41,7 @@ namespace t2
     LinearAllocInit(&self->m_ScratchAlloc, &self->m_LocalHeap, scratch_size, "thread-local scratch");
     self->m_ThreadIndex = index;
     self->m_Queue       = queue;
+    self->m_ProfilerThreadId = profiler_thread_id;
   }
 
   static void ThreadStateDestroy(ThreadState* self)
@@ -546,14 +547,14 @@ namespace t2
     CHECK(AllDependenciesReady(queue, node));
 
     MutexUnlock(queue_lock);
+    const NodeData* node_data = node->m_MmapData;
 
-    ProfilerScope prof_scope("Tundra CheckInputSignature", thread_state->m_ThreadIndex);
+    ProfilerScope prof_scope("CheckInputSignature", thread_state->m_ProfilerThreadId, node_data->m_Annotation);
 
     const BuildQueueConfig& config = queue->m_Config;
     StatCache* stat_cache = config.m_StatCache;
     DigestCache* digest_cache = config.m_DigestCache;
 
-    const NodeData* node_data = node->m_MmapData;
 
     HashState sighash;
     FILE* debug_log = (FILE*) queue->m_Config.m_FileSigningLog;
@@ -919,6 +920,7 @@ namespace t2
     StatCache         *stat_cache   = queue->m_Config.m_StatCache;
     const char        *annotation   = node_data->m_Annotation;
     int                job_id       = thread_state->m_ThreadIndex;
+    int                profiler_thread_id = thread_state->m_ProfilerThreadId;
     bool               echo_cmdline = 0 != (queue->m_Config.m_Flags & BuildQueueConfig::kFlagEchoCommandLines);
     const char        *last_cmd_line = nullptr;
     // Repack frozen env to pointers on the stack.
@@ -994,7 +996,7 @@ namespace t2
     {
       Log(kSpam, "Launching pre-action process");
       TimingScope timing_scope(&g_Stats.m_ExecCount, &g_Stats.m_ExecTimeCycles);
-      ProfilerScope prof_scope("Pre-build", job_id);
+      ProfilerScope prof_scope("Pre-build", profiler_thread_id);
       last_cmd_line = pre_cmd_line;
       if (!dry_run)
       {
@@ -1008,7 +1010,7 @@ namespace t2
     {
       Log(kSpam, "Launching process");
       TimingScope timing_scope(&g_Stats.m_ExecCount, &g_Stats.m_ExecTimeCycles);
-      ProfilerScope prof_scope(annotation, job_id);
+      ProfilerScope prof_scope(annotation, profiler_thread_id);
 
       if (!dry_run)
       {
@@ -1116,6 +1118,13 @@ namespace t2
       WakeWaiters(queue, enqueue_count);
   }
 
+  static void WakeupAllBuildThreadsSoTheyCanExit(BuildQueue* queue)
+  {
+    //build threads are either waiting on m_WorkAvailable signal, or on m_MaxJobsChangedConditionalVariable. Let's send 'm both.
+    CondBroadcast(&queue->m_WorkAvailable);
+    CondBroadcast(&queue->m_MaxJobsChangedConditionalVariable);
+  }
+
   static void AdvanceNode(BuildQueue* queue, ThreadState* thread_state, NodeState* node, Mutex* queue_lock)
   {
     Log(kSpam, "T=%d, [%d] Advancing %s\n",
@@ -1181,7 +1190,7 @@ namespace t2
         case BuildProgress::kFailed:
           queue->m_FailedNodeCount++;
 
-          CondBroadcast(&queue->m_WorkAvailable);
+          WakeupAllBuildThreadsSoTheyCanExit(queue);
 
           node->m_BuildResult = 1;
           node->m_Progress    = BuildProgress::kCompleted;
@@ -1189,10 +1198,8 @@ namespace t2
 
         case BuildProgress::kCompleted:
           queue->m_PendingNodeCount--;
-
+          
           UnblockWaiters(queue, node);
-
-          CondBroadcast(&queue->m_WorkAvailable);
           return;
 
         default:
@@ -1239,7 +1246,7 @@ namespace t2
     return false;
   }
 
-  static bool ShouldKeepBuilding(BuildQueue* queue, int thread_index)
+  static bool ShouldKeepBuilding(BuildQueue* queue)
   {
     // Stop running if we were signalled
     if (nullptr != SignalGetReason())
@@ -1253,35 +1260,96 @@ namespace t2
     if (queue->m_QuitSignalled)
       return false;
 
-    // If we're a worker thread, keep running until we quit.
-    if (0 != thread_index)
-      return true;
-
-    // We're the main thread. Just loop until there's no more nodes and then move on to the next pass.
-    return queue->m_PendingNodeCount > 0;
+    return true;
   }
-
+  
   static void BuildLoop(ThreadState* thread_state)
   {
     BuildQueue        *queue = thread_state->m_Queue;
     ConditionVariable *cv    = &queue->m_WorkAvailable;
     Mutex             *mutex = &queue->m_Lock;
-
+    Mutex             *maxJobsChangedMutex = &queue->m_MaxJobsChangedMutex;
+    ConditionVariable* maxJobsChangedConditionalVariable = &queue->m_MaxJobsChangedConditionalVariable;
     MutexLock(mutex);
+    bool waitingForWork = false;
 
-    while (ShouldKeepBuilding(queue, thread_state->m_ThreadIndex))
+    auto HibernateForThrottlingIfRequired = [=]() {
+      //check if dynamic max jobs amount has been reduced to a point where we need this thread to hibernate.
+      //Don't take a mutex lock for this check, as this if check will almost never hit and it's in a perf critical loop.
+      if (thread_state->m_ThreadIndex < queue->m_DynamicMaxJobs)
+        return false;
+      
+      ProfilerScope profiler_scope("HibernateForThrottling", thread_state->m_ProfilerThreadId, nullptr, "thread_state_sleeping");
+
+      //Ok, it looks like we will need to hibernate. To do this, we need to first let go of the regular build mutex, as we
+      //are currently the thread that owns it.
+      MutexUnlock(mutex);
+
+      //now, we need to go and do a careful check again if we really need to hibernate.  Because we did the initial check without a lock,
+      //the max jobs value might have changed again by now. To do a safe check, we're going to take the max jobs change mutex lock here
+      MutexLock(maxJobsChangedMutex);
+
+      //and check the condition again.
+      if (thread_state->m_ThreadIndex >= queue->m_DynamicMaxJobs)
+      {
+        //Almost always this if statement will hit, and we can go into a very long hibernation state.
+        //we'll use CondWait to do that, and expect to be woken up by the maxJobsChangedConditionalVariable,  should max jobs change again in the future.
+        //CondWait also automatically releases maxJobsChangedMutex, as part conditional variables api work.
+        CondWait(maxJobsChangedConditionalVariable, maxJobsChangedMutex);
+      }
+
+      //when CondWait returns, it will have re-aquired maxJobsChangedMutex. We have no need for the lock here, so we want to release it
+      MutexUnlock(maxJobsChangedMutex);
+
+      //and to proceed with this thread starting to do actual work again (or shutting down), we'll need to get back to regular build mutex, before we can proceed.
+      MutexLock(mutex);
+
+      return true;
+    };
+
+    //This is the main build loop that build threads go through. The mutex/threading policy is that only one buildthread at a time actually goes through this loop
+    //figures out what the next task is to do etc. When that thread has figured out what to do,  it will return the queue->m_Lock mutex while the job it has to execute
+    //is executing. Another build thread can take its turn to pick up a new task at that point. In a sense it's a single threaded system, except that it happens on multiple threads :).
+    //great care must be taken around the queue->m_Lock mutex though. You _have_ to hold it while you interact with the buildsystem datastructures, but you _cannot_ have it when
+    //you go and do something that will take non trivial amount of time.
+
+    //lock is taken here
+    while (ShouldKeepBuilding(queue))
     {
-      if (NodeState* node = NextNode(queue))
+      //if this function decides to hibernate, it will release the lock, and re-aquire it before it returns
+      if (HibernateForThrottlingIfRequired())
+        continue;
+
+      if (NodeState * node = NextNode(queue))
       {
+        if (waitingForWork)
+        {
+          ProfilerEnd(thread_state->m_ProfilerThreadId);
+          waitingForWork = false;
+        }
         AdvanceNode(queue, thread_state, node, mutex);
+        continue;
       }
-      else
+
+      //ok, there is nothing to do at this very moment, let's go to sleep.
+      if (!waitingForWork)
       {
-        CondWait(cv, mutex);
+        ProfilerBegin("WaitingForWork", thread_state->m_ProfilerThreadId, nullptr, "thread_state_sleeping");
+        waitingForWork = true;
       }
+
+      //This API call will release our lock. The api contract is that this function will sleep until CV is triggered from another thread
+      //and during that sleep the mutex will be released,  and before CondWait returns, the lock will be re-aquired
+      CondWait(cv, mutex);
     }
 
     MutexUnlock(mutex);
+    {
+      ProfilerScope profiler_scope("Exiting BuildLoop", thread_state->m_ProfilerThreadId);
+      //add a tiny 10ms profiler entry at the end of a buildloop, to facilitate diagnosing when threads end in the json profiler.  This is not a per problem,
+      //as it happens in parallel with the mainthread doing DestroyBuildQueue() which is always slower than this.
+      Sleep(10);
+    }
 
     Log(kSpam, "build thread %d exiting\n", thread_state->m_ThreadIndex);
   }
@@ -1303,7 +1371,9 @@ namespace t2
     CHECK(config->m_MaxExpensiveCount > 0 && config->m_MaxExpensiveCount <= config->m_ThreadCount);
 
     MutexInit(&queue->m_Lock);
+    MutexInit(&queue->m_MaxJobsChangedMutex);
     CondInit(&queue->m_WorkAvailable);
+    CondInit(&queue->m_MaxJobsChangedConditionalVariable);
 
     // Compute queue capacity. Allocate space for a power of two number of
     // indices that's at least one larger than the max number of nodes. Because
@@ -1327,7 +1397,8 @@ namespace t2
     queue->m_ExpensiveWaitList  = HeapAllocateArray<NodeState*>(heap, capacity);
     queue->m_SharedResourcesCreated = HeapAllocateArrayZeroed<uint32_t>(heap, config->m_SharedResourcesCount);
     MutexInit(&queue->m_SharedResourcesLock);
-
+    
+ 
     CHECK(queue->m_Queue);
 
     if (queue->m_Config.m_ThreadCount > kMaxBuildThreads)
@@ -1337,6 +1408,7 @@ namespace t2
 
       queue->m_Config.m_ThreadCount = kMaxBuildThreads;
     }
+    queue->m_DynamicMaxJobs = queue->m_Config.m_ThreadCount;
 
     Log(kDebug, "build queue initialized; ring buffer capacity = %u", queue->m_QueueCapacity);
 
@@ -1349,13 +1421,12 @@ namespace t2
     {
       ThreadState* thread_state = &queue->m_ThreadState[i];
 
-      ThreadStateInit(thread_state, queue, MB(32), i);
+      //the profiler thread id here is "i+1",  since if we have 4 buildthreads, we'll have 5 total threads, as the main thread doesn't participate in building, but only sleeps
+      //and pumps the OS messageloop.
+      ThreadStateInit(thread_state, queue, MB(32), i, i+1);
 
-      if (i > 0)
-      {
-        Log(kDebug, "starting build thread %d", i);
-        queue->m_Threads[i] = ThreadStart(BuildThreadRoutine, thread_state);
-      }
+      Log(kDebug, "starting build thread %d", i);
+      queue->m_Threads[i] = ThreadStart(BuildThreadRoutine, thread_state);
     }
   }
 
@@ -1369,15 +1440,12 @@ namespace t2
     queue->m_QuitSignalled = true;
     MutexUnlock(&queue->m_Lock);
 
-    CondBroadcast(&queue->m_WorkAvailable);
+    WakeupAllBuildThreadsSoTheyCanExit(queue);
 
     for (int i = 0, thread_count = config->m_ThreadCount; i < thread_count; ++i)
     {
-      if (i > 0)
-      {
-        Log(kDebug, "joining with build thread %d", i);
-        ThreadJoin(queue->m_Threads[i]);
-      }
+      Log(kDebug, "joining with build thread %d", i);
+      ThreadJoin(queue->m_Threads[i]);
 
       ThreadStateDestroy(&queue->m_ThreadState[i]);
     }
@@ -1400,11 +1468,73 @@ namespace t2
     MutexDestroy(&queue->m_SharedResourcesLock);
 
     CondDestroy(&queue->m_WorkAvailable);
+    CondDestroy(&queue->m_MaxJobsChangedConditionalVariable);
+
     MutexDestroy(&queue->m_Lock);
+    MutexDestroy(&queue->m_MaxJobsChangedMutex);
 
     // Unblock all signals on the main thread.
     SignalHandlerSetCondition(nullptr);
     SignalBlockThread(false);
+  }
+
+  static void SetNewDynamicMaxJobs(BuildQueue* queue, int maxJobs, const char* formatString, ...)
+  {
+    MutexLock(&queue->m_MaxJobsChangedMutex);
+    queue->m_DynamicMaxJobs = maxJobs;
+    CondBroadcast(&queue->m_MaxJobsChangedConditionalVariable);
+    MutexUnlock(&queue->m_MaxJobsChangedMutex);
+
+    char buffer[2000];
+    va_list args;
+    va_start(args, formatString);
+    snprintf(buffer, sizeof(buffer), formatString, args);
+    va_end(args);
+
+    MutexLock(&queue->m_Lock);
+    PrintNonNodeActionResult(0, queue->m_Config.m_MaxNodes, MessageStatusLevel::Warning, buffer);
+    MutexUnlock(&queue->m_Lock);
+  }
+
+  static bool throttled = false;
+
+  static void ProcessThrottling(BuildQueue* queue)
+  {
+    double t = TimeSinceLastDetectedHumanActivityOnMachine();
+
+    //in case we've not seen any activity at all (which is what happens if you just started the build), we don't want to do any throttling.
+    if (t == -1)
+      return;
+
+    int throttleInactivityPeriod = queue->m_Config.m_ThrottleInactivityPeriod;
+
+    if (!throttled)
+    {
+      //if the last time we saw activity was a long time ago, we can stay unthrottled
+      if (t > throttleInactivityPeriod)
+        return;
+
+      //if we see activity just now, we want to throttle, but let's not do it in the first few seconds, otherwise when a user manually aborts the build,
+      //right before aborting she'll see a throttling message.
+      if (t < 3)
+        return;
+
+      //ok, let's actually throttle;
+      int maxJobs = queue->m_Config.m_ThrottledThreadsAmount;
+      if (maxJobs == 0)
+        maxJobs = std::max(1, (int)(queue->m_Config.m_ThreadCount * 0.75));
+      SetNewDynamicMaxJobs(queue, maxJobs, "Human activity detected, throttling to %d simultaneous jobs", maxJobs);
+      throttled = true;
+    }
+
+    //so we are throttled.  if there has been recent user activity, that's fine, we want to continue to be throttled.
+    if (t < throttleInactivityPeriod)
+      return;
+
+    //if we're throttled but haven't seen any user interaction with the machine for a while, we'll unthrottle.
+    int maxJobs = queue->m_Config.m_ThreadCount;
+    SetNewDynamicMaxJobs(queue, maxJobs, "No human activity detected on this machine for %d seconds, unthrottling to %d simultaneous jobs", throttleInactivityPeriod,  maxJobs);
+    throttled = false;
   }
 
   BuildResult::Enum BuildQueueBuildNodeRange(BuildQueue* queue, int start_index, int count, int pass_index)
@@ -1437,12 +1567,19 @@ namespace t2
     queue->m_QueueWriteIndex  = count;
     queue->m_QueueReadIndex   = 0;
 
-    MutexUnlock(&queue->m_Lock);
-
+    
     CondBroadcast(&queue->m_WorkAvailable);
 
-    // This thread is thread 0.
-    BuildLoop(&queue->m_ThreadState[0]);
+    MutexUnlock(&queue->m_Lock);
+
+    while (queue->m_PendingNodeCount > 0 && SignalGetReason() == nullptr)
+    {
+      PumpOSMessageLoop();
+      ProcessThrottling(queue);
+
+      //Maybe one day implement something where builder threads signal the main thread that the build has finished.
+      Sleep(10);
+    }
 
     if (SignalGetReason())
       return BuildResult::kInterrupted;

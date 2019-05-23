@@ -75,6 +75,8 @@ void DriverOptionsInit(DriverOptions* self)
   self->m_IdeGen            = false;
   self->m_DebugSigning      = false;
   self->m_ContinueOnError   = false;
+  self->m_ThrottleOnHumanActivity = false;
+  self->m_ThrottleInactivityPeriod = 30;
   self->m_ThreadCount       = GetCpuCount();
   self->m_WorkingDir        = nullptr;
   self->m_DAGFileName       = ".tundra2.dag";
@@ -357,6 +359,8 @@ bool DriverInitData(Driver* self)
 
 static bool DriverPrepareDag(Driver* self, const char* dag_fn)
 {
+  ProfilerScope profiler_scope("DriverPrepareDag", 0);
+
   const int out_of_date_reason_length = 500;
   char out_of_date_reason[out_of_date_reason_length+1];
 
@@ -966,6 +970,9 @@ BuildResult::Enum DriverBuild(Driver* self)
   queue_config.m_MaxExpensiveCount       = max_expensive_count;
   queue_config.m_SharedResources         = dag->m_SharedResources.GetArray();
   queue_config.m_SharedResourcesCount    = dag->m_SharedResources.GetCount();
+  queue_config.m_ThrottleInactivityPeriod = self->m_Options.m_ThrottleInactivityPeriod;
+  queue_config.m_ThrottleOnHumanActivity  = self->m_Options.m_ThrottleOnHumanActivity;
+  queue_config.m_ThrottledThreadsAmount  = self->m_Options.m_ThrottledThreadsAmount;
 
   if (self->m_Options.m_Verbose)
   {

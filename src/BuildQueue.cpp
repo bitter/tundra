@@ -1200,6 +1200,15 @@ namespace t2
           queue->m_PendingNodeCount--;
           
           UnblockWaiters(queue, node);
+
+          if (queue->m_PendingNodeCount == 0)
+          {
+            //this build is done! let's signal the main thread, that it can start terminating all build threads, and start exiting the program.
+            MutexLock(&queue->m_BuildFinishedMutex);
+            CondSignal(&queue->m_BuildFinishedConditionalVariable);
+            MutexUnlock(&queue->m_BuildFinishedMutex);
+          }
+
           return;
 
         default:
@@ -1348,7 +1357,9 @@ namespace t2
       ProfilerScope profiler_scope("Exiting BuildLoop", thread_state->m_ProfilerThreadId);
       //add a tiny 10ms profiler entry at the end of a buildloop, to facilitate diagnosing when threads end in the json profiler.  This is not a per problem,
       //as it happens in parallel with the mainthread doing DestroyBuildQueue() which is always slower than this.
+#if WIN32
       Sleep(10);
+#endif
     }
 
     Log(kSpam, "build thread %d exiting\n", thread_state->m_ThreadIndex);
@@ -1372,8 +1383,10 @@ namespace t2
 
     MutexInit(&queue->m_Lock);
     MutexInit(&queue->m_MaxJobsChangedMutex);
+    MutexInit(&queue->m_BuildFinishedMutex);
     CondInit(&queue->m_WorkAvailable);
     CondInit(&queue->m_MaxJobsChangedConditionalVariable);
+    CondInit(&queue->m_BuildFinishedConditionalVariable);
 
     // Compute queue capacity. Allocate space for a power of two number of
     // indices that's at least one larger than the max number of nodes. Because
@@ -1432,7 +1445,7 @@ namespace t2
 
   void BuildQueueDestroy(BuildQueue* queue)
   {
-    ProfilerScope prof_scope("Tundra BuildQueueDestroy", 0);
+    ProfilerScope prof_scope("BuildQueueDestroy", 0);
     Log(kDebug, "destroying build queue");
     const BuildQueueConfig* config = &queue->m_Config;
 
@@ -1444,16 +1457,20 @@ namespace t2
 
     for (int i = 0, thread_count = config->m_ThreadCount; i < thread_count; ++i)
     {
-      Log(kDebug, "joining with build thread %d", i);
-      ThreadJoin(queue->m_Threads[i]);
-
+      {
+        ProfilerScope profile_scope("JoinBuildThread", 0);
+        ThreadJoin(queue->m_Threads[i]);
+      }
       ThreadStateDestroy(&queue->m_ThreadState[i]);
     }
 
-    // Destroy any shared resources that were created
-    for (int i = 0; i < config->m_SharedResourcesCount; ++i)
-      if (queue->m_SharedResourcesCreated[i] > 0)
-        SharedResourceDestroy(queue, config->m_Heap, i);
+    {
+      ProfilerScope profile_scope("SharedResourceDestroy", 0);
+      // Destroy any shared resources that were created
+      for (int i = 0; i < config->m_SharedResourcesCount; ++i)
+        if (queue->m_SharedResourcesCreated[i] > 0)
+          SharedResourceDestroy(queue, config->m_Heap, i);
+    }
 
     // Output any deferred error messages.
     MutexLock(&queue->m_Lock);
@@ -1572,14 +1589,24 @@ namespace t2
 
     MutexUnlock(&queue->m_Lock);
 
+
+    MutexLock(&queue->m_BuildFinishedMutex);
     while (queue->m_PendingNodeCount > 0 && SignalGetReason() == nullptr)
     {
       PumpOSMessageLoop();
       ProcessThrottling(queue);
 
-      //Maybe one day implement something where builder threads signal the main thread that the build has finished.
-      Sleep(10);
+      //we need a timeout version of CondWait so that we ensure we continue to pump the OS message loop from time to time.
+      //Turns out that's not super trivial to implement on osx without clock_gettime() which is 10.12 and up.  Since we only
+      //really support throttling and os message pumps on windows today, let's postpone this problem to another day, and use
+      //the non-timing out version on non windows platforms
+#if WIN32
+      CondWait(&queue->m_BuildFinishedConditionalVariable, &queue->m_BuildFinishedMutex, 100);
+#else
+      CondWait(&queue->m_BuildFinishedConditionalVariable, &queue->m_BuildFinishedMutex);
+#endif
     }
+    MutexUnlock(&queue->m_BuildFinishedMutex);
 
     if (SignalGetReason())
       return BuildResult::kInterrupted;

@@ -80,6 +80,7 @@ namespace t2
 
   void CondInit(ConditionVariable* var);
   void CondDestroy(ConditionVariable* var);
+  void CondWait(ConditionVariable* var, Mutex* mutex, int timeoutMilliseconds);
   void CondWait(ConditionVariable* var, Mutex* mutex);
   void CondSignal(ConditionVariable* var);
   void CondBroadcast(ConditionVariable* var);
@@ -99,6 +100,12 @@ namespace t2
   {
     if (!SleepConditionVariableCS(&var->m_Impl, &mutex->m_Impl, INFINITE))
       CroakErrno("SleepConditionVariableCS() failed");
+  }
+
+
+  inline void CondWait(ConditionVariable* var, Mutex* mutex, int timeoutMilliseconds)
+  {
+    SleepConditionVariableCS(&var->m_Impl, &mutex->m_Impl, timeoutMilliseconds);
   }
 
   inline void CondSignal(ConditionVariable* var)

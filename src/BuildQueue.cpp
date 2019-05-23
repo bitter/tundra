@@ -1445,7 +1445,6 @@ namespace t2
 
   void BuildQueueDestroy(BuildQueue* queue)
   {
-    ProfilerScope prof_scope("BuildQueueDestroy", 0);
     Log(kDebug, "destroying build queue");
     const BuildQueueConfig* config = &queue->m_Config;
 
@@ -1510,6 +1509,7 @@ namespace t2
 
     MutexLock(&queue->m_Lock);
     PrintNonNodeActionResult(0, queue->m_Config.m_MaxNodes, MessageStatusLevel::Warning, buffer);
+
     MutexUnlock(&queue->m_Lock);
   }
 
@@ -1528,7 +1528,7 @@ namespace t2
     if (!throttled)
     {
       //if the last time we saw activity was a long time ago, we can stay unthrottled
-      if (t > throttleInactivityPeriod)
+      if (t >= throttleInactivityPeriod)
         return;
 
       //if we see activity just now, we want to throttle, but let's not do it in the first few seconds, otherwise when a user manually aborts the build,
@@ -1550,7 +1550,7 @@ namespace t2
 
     //if we're throttled but haven't seen any user interaction with the machine for a while, we'll unthrottle.
     int maxJobs = queue->m_Config.m_ThreadCount;
-    SetNewDynamicMaxJobs(queue, maxJobs, "No human activity detected on this machine for %d seconds, unthrottling back up to %d simultaneous jobs", throttleInactivityPeriod,  maxJobs);
+    SetNewDynamicMaxJobs(queue, maxJobs, "No human activity detected on this machine for %d seconds, unthrottling back up to %d simultaneous jobs", (int)t, throttleInactivityPeriod, maxJobs);
     throttled = false;
   }
 

@@ -5,62 +5,17 @@
 
 namespace t2
 {
-  static int g_previous_mouse_x;
-  static int g_previous_mouse_y;
-
   static uint64_t g_timeOfLastHumanInteraction = -1;
-
-#if WIN32
-  static HHOOK g_keyboardHook = nullptr;
-  static HHOOK g_mouseHook = nullptr;
-
-  LRESULT CALLBACK MouseProc(int nCode,
-    WPARAM wParam,
-    LPARAM lParam)
-  {
-    MSLLHOOKSTRUCT* s = (MSLLHOOKSTRUCT*)lParam;
-
-    if (g_previous_mouse_x != s->pt.x || g_previous_mouse_y != s->pt.y)
-    {
-      g_previous_mouse_x = s->pt.x;
-      g_previous_mouse_y = s->pt.y;
-      g_timeOfLastHumanInteraction = TimerGet();
-    }
-    return CallNextHookEx(0, nCode, wParam, lParam);
-  }
-
-  LRESULT CALLBACK LowLevelKeyboardProc(int nCode,
-    WPARAM wParam,
-    LPARAM lParam)
-  {
-    KBDLLHOOKSTRUCT* s = (KBDLLHOOKSTRUCT*)lParam;
-    g_timeOfLastHumanInteraction = TimerGet();
-    return CallNextHookEx(0, nCode, wParam, lParam);
-  }
 
   void HumanActivityDetectionInit()
   {
-    // Install the low-level keyboard & mouse hooks
-    g_mouseHook = SetWindowsHookEx(WH_MOUSE_LL,
-      MouseProc,
-      GetModuleHandle(0),
-      0);
-
-    // Install the low-level keyboard & mouse hooks
-    g_keyboardHook = SetWindowsHookEx(WH_KEYBOARD_LL,
-      LowLevelKeyboardProc,
-      GetModuleHandle(0),
-      0);
   }
 
   void HumanActivityDetectionDestroy()
   {
-    if (g_mouseHook)
-      UnhookWindowsHookEx(g_mouseHook);
-    if (g_keyboardHook)
-      UnhookWindowsHookEx(g_keyboardHook);
   }
 
+#if WIN32
   void PumpOSMessageLoop()
   {
     MSG msg;
@@ -74,22 +29,29 @@ namespace t2
     }
   }
 #else
-  //dummy implementation that always will say we haven't seen any human activity
-  void HumanActivityDetectionInit()
-  {
-  }
-  void HumanActivityDetectionDestroy()
-  {
-  }
   void PumpOSMessageLoop()
   {
   }
 #endif
 
+  static DWORD first_observed_last_input = 0;
+
   double TimeSinceLastDetectedHumanActivityOnMachine()
   {
-     if (g_timeOfLastHumanInteraction == -1)
-       return -1;
-     return TimerDiffSeconds(g_timeOfLastHumanInteraction, TimerGet());
+    LASTINPUTINFO lastinputInfo;
+    lastinputInfo.cbSize = sizeof(LASTINPUTINFO);
+    if (GetLastInputInfo(&lastinputInfo) == 0)
+      return -1;
+
+    if (first_observed_last_input == 0)
+      first_observed_last_input = lastinputInfo.dwTime;
+
+    if (first_observed_last_input == lastinputInfo.dwTime)
+      return -1;
+
+    uint64_t current_tick_count = GetTickCount64();
+    uint64_t result_ticks = current_tick_count - lastinputInfo.dwTime;
+
+    return  result_ticks / 1000.;
   }
 }

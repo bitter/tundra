@@ -360,8 +360,6 @@ bool DriverInitData(Driver* self)
 
 static bool DriverPrepareDag(Driver* self, const char* dag_fn)
 {
-  ProfilerScope profiler_scope("DriverPrepareDag", 0);
-
   const int out_of_date_reason_length = 500;
   char out_of_date_reason[out_of_date_reason_length+1];
 

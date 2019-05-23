@@ -1488,7 +1488,7 @@ namespace t2
     char buffer[2000];
     va_list args;
     va_start(args, formatString);
-    snprintf(buffer, sizeof(buffer), formatString, args);
+    vsnprintf(buffer, sizeof(buffer), formatString, args);
     va_end(args);
 
     MutexLock(&queue->m_Lock);
@@ -1516,14 +1516,14 @@ namespace t2
 
       //if we see activity just now, we want to throttle, but let's not do it in the first few seconds, otherwise when a user manually aborts the build,
       //right before aborting she'll see a throttling message.
-      if (t < 3)
+      if (t < 1)
         return;
 
       //ok, let's actually throttle;
       int maxJobs = queue->m_Config.m_ThrottledThreadsAmount;
       if (maxJobs == 0)
         maxJobs = std::max(1, (int)(queue->m_Config.m_ThreadCount * 0.75));
-      SetNewDynamicMaxJobs(queue, maxJobs, "Human activity detected, throttling to %d simultaneous jobs", maxJobs);
+      SetNewDynamicMaxJobs(queue, maxJobs, "Human activity detected, throttling to %d simultaneous jobs to leave system responsive", maxJobs);
       throttled = true;
     }
 
@@ -1533,7 +1533,7 @@ namespace t2
 
     //if we're throttled but haven't seen any user interaction with the machine for a while, we'll unthrottle.
     int maxJobs = queue->m_Config.m_ThreadCount;
-    SetNewDynamicMaxJobs(queue, maxJobs, "No human activity detected on this machine for %d seconds, unthrottling to %d simultaneous jobs", throttleInactivityPeriod,  maxJobs);
+    SetNewDynamicMaxJobs(queue, maxJobs, "No human activity detected on this machine for %d seconds, unthrottling back up to %d simultaneous jobs", throttleInactivityPeriod,  maxJobs);
     throttled = false;
   }
 

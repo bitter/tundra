@@ -18,6 +18,7 @@
 #include "OutputValidation.hpp"
 #include "DigestCache.hpp"
 #include "SharedResources.hpp"
+#include "HumanActivityDetection.hpp"
 
 #include <stdio.h>
 
@@ -34,7 +35,7 @@ namespace t2
     };
   }
 
-  static void ThreadStateInit(ThreadState* self, BuildQueue* queue, size_t scratch_size, int index)
+  static void ThreadStateInit(ThreadState* self, BuildQueue* queue, size_t scratch_size, int index, int profiler_thread_id)
   {
     HeapInit(&self->m_LocalHeap);
     LinearAllocInit(&self->m_ScratchAlloc, &self->m_LocalHeap, scratch_size, "thread-local scratch");

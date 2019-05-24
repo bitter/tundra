@@ -1592,7 +1592,7 @@ namespace t2
 
 
     MutexLock(&queue->m_BuildFinishedMutex);
-    while (queue->m_PendingNodeCount > 0 && SignalGetReason() == nullptr)
+    while (queue->m_PendingNodeCount > 0 && SignalGetReason() == nullptr && queue->m_FailedNodeCount == 0)
     {
       PumpOSMessageLoop();
       ProcessThrottling(queue);

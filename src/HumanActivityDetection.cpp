@@ -28,11 +28,6 @@ namespace t2
       DispatchMessage(&msg);
     }
   }
-#else
-  void PumpOSMessageLoop()
-  {
-  }
-#endif
 
   static DWORD first_observed_last_input = 0;
 
@@ -54,4 +49,15 @@ namespace t2
 
     return  result_ticks / 1000.;
   }
+#else
+  //only implemented for windows for now
+  void PumpOSMessageLoop()
+  {
+  }
+  double TimeSinceLastDetectedHumanActivityOnMachine()
+  {
+    return -1;
+  }
+#endif
+
 }

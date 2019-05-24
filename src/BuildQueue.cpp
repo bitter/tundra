@@ -19,6 +19,7 @@
 #include "DigestCache.hpp"
 #include "SharedResources.hpp"
 #include "HumanActivityDetection.hpp"
+#include <stdarg.h>
 
 #include <stdio.h>
 

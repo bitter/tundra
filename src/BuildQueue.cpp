@@ -1126,6 +1126,14 @@ namespace t2
     CondBroadcast(&queue->m_MaxJobsChangedConditionalVariable);
   }
 
+  static void SignalMainThreadToStartCleaningUp(BuildQueue* queue)
+  {
+    //this build is done! let's signal the main thread, that it can start terminating all build threads, and start exiting the program.
+    MutexLock(&queue->m_BuildFinishedMutex);
+    CondSignal(&queue->m_BuildFinishedConditionalVariable);
+    MutexUnlock(&queue->m_BuildFinishedMutex);
+  }
+
   static void AdvanceNode(BuildQueue* queue, ThreadState* thread_state, NodeState* node, Mutex* queue_lock)
   {
     Log(kSpam, "T=%d, [%d] Advancing %s\n",
@@ -1191,6 +1199,7 @@ namespace t2
         case BuildProgress::kFailed:
           queue->m_FailedNodeCount++;
 
+          SignalMainThreadToStartCleaningUp(queue);
           WakeupAllBuildThreadsSoTheyCanExit(queue);
 
           node->m_BuildResult = 1;
@@ -1203,12 +1212,7 @@ namespace t2
           UnblockWaiters(queue, node);
 
           if (queue->m_PendingNodeCount == 0)
-          {
-            //this build is done! let's signal the main thread, that it can start terminating all build threads, and start exiting the program.
-            MutexLock(&queue->m_BuildFinishedMutex);
-            CondSignal(&queue->m_BuildFinishedConditionalVariable);
-            MutexUnlock(&queue->m_BuildFinishedMutex);
-          }
+            SignalMainThreadToStartCleaningUp(queue);
 
           return;
 
@@ -1352,6 +1356,9 @@ namespace t2
       //and during that sleep the mutex will be released,  and before CondWait returns, the lock will be re-aquired
       CondWait(cv, mutex);
     }
+
+    if (waitingForWork)
+      ProfilerEnd(thread_state->m_ProfilerThreadId);
 
     MutexUnlock(mutex);
     {

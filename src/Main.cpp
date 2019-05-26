@@ -69,13 +69,17 @@ static const struct OptionTemplate
     "Enable debug messages" },
   { 'S', "debug-signing", OptionType::kBool, offsetof(t2::DriverOptions, m_DebugSigning),
     "Generate an extensive log of signature generation" },
-  { 'r', "throttle", OptionType::kBool, offsetof(t2::DriverOptions, m_ThrottleOnHumanActivity),
+
+#if WIN32
+{ 'r', "throttle", OptionType::kBool, offsetof(t2::DriverOptions, m_ThrottleOnHumanActivity),
     "Throttles down amount of simultaneous jobs when mouse or keyboard activity has been detected." },
   { '\0', "throttle-time", OptionType::kInt, offsetof(t2::DriverOptions, m_ThrottleInactivityPeriod),
     "Amount of inactive time after which we stop throttling. (if throttling behaviour is enabled)" },
     { '\0', "throttle-threads-amount", OptionType::kInt, offsetof(t2::DriverOptions, m_ThrottledThreadsAmount),
     "Amount of threads used in throttled mode" },
-  { 's', "stats", OptionType::kBool, offsetof(t2::DriverOptions, m_DisplayStats),
+#endif
+
+{ 's', "stats", OptionType::kBool, offsetof(t2::DriverOptions, m_DisplayStats),
     "Display stats" },
   { 'p', "profile", OptionType::kString, offsetof(t2::DriverOptions, m_ProfileOutput),
     "Output build profile" },

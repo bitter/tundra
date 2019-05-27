@@ -1536,7 +1536,7 @@ void DriverRemoveStaleOutputs(Driver* self)
   if (nuke_count > 0)
   {
     char buffer[2000];
-    snprintf(buffer, sizeof(buffer), "Delete %d artifact files that are no longer in use. (like %s)", paths[0]);
+    snprintf(buffer, sizeof(buffer), "Delete %d artifact files that are no longer in use. (like %s)", nuke_count, paths[0]);
     PrintNonNodeActionResult(TimerDiffSeconds(time_exec_started, TimerGet()), self->m_Nodes.m_Size, MessageStatusLevel::Success, buffer);
   }
  

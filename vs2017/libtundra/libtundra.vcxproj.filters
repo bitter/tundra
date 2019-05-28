@@ -135,6 +135,9 @@
     <ClInclude Include="..\..\src\SharedResources.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\src\HumanActivityDetection.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\src\BinaryWriter.cpp">
@@ -240,6 +243,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="..\..\src\SharedResources.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\src\HumanActivityDetection.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

@@ -36,6 +36,9 @@ struct DriverOptions
   bool        m_Rebuild;
   bool        m_DebugSigning;
   bool        m_ContinueOnError;
+  bool        m_ThrottleOnHumanActivity;
+  int         m_ThrottleInactivityPeriod;
+  int         m_ThrottledThreadsAmount;
 #if defined(TUNDRA_WIN32)
   bool        m_RunUnprotected;
 #endif

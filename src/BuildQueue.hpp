@@ -41,6 +41,7 @@ namespace t2
     uint32_t        m_Flags;
     MemAllocHeap   *m_Heap;
     int             m_ThreadCount;
+    int             m_ThrottleInactivityPeriod;
     const NodeData *m_NodeData;
     NodeState      *m_NodeState;
     int             m_MaxNodes;
@@ -55,6 +56,8 @@ namespace t2
     int32_t         m_MaxExpensiveCount;
     const SharedResourceData* m_SharedResources;
     int             m_SharedResourcesCount;
+    bool            m_ThrottleOnHumanActivity;
+    int             m_ThrottledThreadsAmount;
   };
 
   struct BuildQueue;
@@ -64,6 +67,7 @@ namespace t2
     MemAllocHeap      m_LocalHeap;
     MemAllocLinear    m_ScratchAlloc;
     int               m_ThreadIndex;
+    int               m_ProfilerThreadId;
     BuildQueue*       m_Queue;
   };
 
@@ -71,6 +75,12 @@ namespace t2
   {
     Mutex              m_Lock;
     ConditionVariable  m_WorkAvailable;
+    ConditionVariable  m_MaxJobsChangedConditionalVariable;
+    Mutex              m_MaxJobsChangedMutex;
+
+    ConditionVariable  m_BuildFinishedConditionalVariable;
+    Mutex              m_BuildFinishedMutex;
+    
     int32_t           *m_Queue;
     uint32_t           m_QueueCapacity;
     uint32_t           m_QueueReadIndex;
@@ -88,6 +98,7 @@ namespace t2
     uint32_t          *m_SharedResourcesCreated;
     Mutex              m_SharedResourcesLock;
     bool               m_QuitSignalled;
+    uint32_t           m_DynamicMaxJobs;
   };
 
   namespace BuildResult

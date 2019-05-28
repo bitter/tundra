@@ -75,6 +75,9 @@ void DriverOptionsInit(DriverOptions* self)
   self->m_IdeGen            = false;
   self->m_DebugSigning      = false;
   self->m_ContinueOnError   = false;
+  self->m_ThrottleOnHumanActivity = false;
+  self->m_ThrottleInactivityPeriod = 30;
+  self->m_ThrottledThreadsAmount = 0;
   self->m_ThreadCount       = GetCpuCount();
   self->m_WorkingDir        = nullptr;
   self->m_DAGFileName       = ".tundra2.dag";
@@ -966,6 +969,9 @@ BuildResult::Enum DriverBuild(Driver* self)
   queue_config.m_MaxExpensiveCount       = max_expensive_count;
   queue_config.m_SharedResources         = dag->m_SharedResources.GetArray();
   queue_config.m_SharedResourcesCount    = dag->m_SharedResources.GetCount();
+  queue_config.m_ThrottleInactivityPeriod = self->m_Options.m_ThrottleInactivityPeriod;
+  queue_config.m_ThrottleOnHumanActivity  = self->m_Options.m_ThrottleOnHumanActivity;
+  queue_config.m_ThrottledThreadsAmount  = self->m_Options.m_ThrottledThreadsAmount;
 
   if (self->m_Options.m_Verbose)
   {
@@ -1530,7 +1536,7 @@ void DriverRemoveStaleOutputs(Driver* self)
   if (nuke_count > 0)
   {
     char buffer[2000];
-    snprintf(buffer, sizeof(buffer), "Delete %d artifact files that are no longer in use. (like %s)", paths[0]);
+    snprintf(buffer, sizeof(buffer), "Delete %d artifact files that are no longer in use. (like %s)", nuke_count, paths[0]);
     PrintNonNodeActionResult(TimerDiffSeconds(time_exec_started, TimerGet()), self->m_Nodes.m_Size, MessageStatusLevel::Success, buffer);
   }
  

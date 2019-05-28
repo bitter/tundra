@@ -106,6 +106,7 @@
     <ClInclude Include="..\..\src\FileSign.hpp" />
     <ClInclude Include="..\..\src\Hash.hpp" />
     <ClInclude Include="..\..\src\HashTable.hpp" />
+    <ClInclude Include="..\..\src\HumanActivityDetection.hpp" />
     <ClInclude Include="..\..\src\IncludeScanner.hpp" />
     <ClInclude Include="..\..\src\JsonParse.hpp" />
     <ClInclude Include="..\..\src\JsonWriter.hpp" />
@@ -150,6 +151,7 @@
     <ClCompile Include="..\..\src\HashFast.cpp" />
     <ClCompile Include="..\..\src\HashSha1.cpp" />
     <ClCompile Include="..\..\src\HashTable.cpp" />
+    <ClCompile Include="..\..\src\HumanActivityDetection.cpp" />
     <ClCompile Include="..\..\src\IncludeScanner.cpp" />
     <ClCompile Include="..\..\src\JsonParse.cpp" />
     <ClCompile Include="..\..\src\JsonWriter.cpp" />

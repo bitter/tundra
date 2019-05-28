@@ -7,6 +7,7 @@
 #include "Profiler.hpp"
 #include "DagData.hpp"
 #include "NodeResultPrinting.hpp"
+#include "HumanActivityDetection.hpp"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -68,7 +69,13 @@ static const struct OptionTemplate
     "Enable debug messages" },
   { 'S', "debug-signing", OptionType::kBool, offsetof(t2::DriverOptions, m_DebugSigning),
     "Generate an extensive log of signature generation" },
-  { 's', "stats", OptionType::kBool, offsetof(t2::DriverOptions, m_DisplayStats),
+{ 'r', "throttle", OptionType::kBool, offsetof(t2::DriverOptions, m_ThrottleOnHumanActivity),
+    "Throttles down amount of simultaneous jobs when mouse or keyboard activity has been detected." },
+  { '\0', "throttle-time", OptionType::kInt, offsetof(t2::DriverOptions, m_ThrottleInactivityPeriod),
+    "Amount of inactive time after which we stop throttling. (if throttling behaviour is enabled)" },
+    { '\0', "throttle-threads-amount", OptionType::kInt, offsetof(t2::DriverOptions, m_ThrottledThreadsAmount),
+    "Amount of threads used in throttled mode" },
+{ 's', "stats", OptionType::kBool, offsetof(t2::DriverOptions, m_DisplayStats),
     "Display stats" },
   { 'p', "profile", OptionType::kString, offsetof(t2::DriverOptions, m_ProfileOutput),
     "Output build profile" },
@@ -245,7 +252,12 @@ static void ShowHelp()
     else
       snprintf(long_text, sizeof long_text, "%s          ", t->m_LongName);
 
-    printf("  -%c, --%-*s %s\n", t->m_ShortName, (int) max_opt_len, long_text, t->m_Help);
+    if (t->m_ShortName != 0)
+      printf("  -%c, ", t->m_ShortName);
+    else
+      printf("       ");
+
+    printf("--%-*s %s\n", (int) max_opt_len, long_text, t->m_Help);
   }
 }
 
@@ -269,6 +281,16 @@ int main(int argc, char* argv[])
     return 1;
   }
 
+  if (options.m_ThrottleOnHumanActivity)
+  {
+#if WIN32
+    HumanActivityDetectionInit();
+#else
+    printf("Throttling is not supported on this paltform\n");
+    return 1;
+#endif
+    
+  }
   DriverInitializeTundraFilePaths(&options);
 #if defined(TUNDRA_WIN32)
   if (!options.m_RunUnprotected && nullptr == getenv("_TUNDRA2_PARENT_PROCESS_HANDLE"))
@@ -422,7 +444,7 @@ int main(int argc, char* argv[])
 
   // Initialize profiler if needed
   if (driver.m_Options.m_ProfileOutput)
-    ProfilerInit(driver.m_Options.m_ProfileOutput, driver.m_Options.m_ThreadCount);
+    ProfilerInit(driver.m_Options.m_ProfileOutput, driver.m_Options.m_ThreadCount+1);
 
 
   BuildResult::Enum build_result = BuildResult::kSetupError;
@@ -493,7 +515,11 @@ int main(int argc, char* argv[])
     Log(kWarning, "Couldn't save SHA1 digest cache");
 
 leave:
+  if (options.m_ThrottleOnHumanActivity)
+    HumanActivityDetectionDestroy();
+
   DriverDestroy(&driver);
+
 
   // Dump/close profiler
   if (driver.m_Options.m_ProfileOutput)

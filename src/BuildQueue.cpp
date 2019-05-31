@@ -1256,6 +1256,12 @@ namespace t2
     if (queue->m_MainThreadWantsToCleanUp)
       return false;
 
+
+    //you'd think we don't have to check for this, as the main thread will realize the build has failed, and will shut us down,
+    //but if we don't check this in the buildloop, we'll actually continue to build nodes whose dependencies have failed.
+    if (queue->m_FailedNodeCount > 0)
+      return false;
+
     return true;
   }
   

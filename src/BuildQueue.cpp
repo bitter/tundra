@@ -1133,7 +1133,9 @@ namespace t2
     //2) by a node failing to build. In this case we will ask the main thread to initiate teardown also by signaling m_BuildFinishedConditionalVariable
     //3) by the build being succesfully finished.  Same as #2, we also signal, and ask the mainthread to initiate a cleanup
 
+    MutexLock(&queue->m_BuildFinishedMutex);
     CondSignal(&queue->m_BuildFinishedConditionalVariable);
+    MutexUnlock(&queue->m_BuildFinishedMutex);
   }
 
   static void AdvanceNode(BuildQueue* queue, ThreadState* thread_state, NodeState* node, Mutex* queue_lock)
@@ -1358,6 +1360,8 @@ namespace t2
     CondInit(&queue->m_WorkAvailable);
     CondInit(&queue->m_MaxJobsChangedConditionalVariable);
     CondInit(&queue->m_BuildFinishedConditionalVariable);
+    MutexInit(&queue->m_BuildFinishedMutex);
+    MutexLock(&queue->m_BuildFinishedMutex);
 
     // Compute queue capacity. Allocate space for a power of two number of
     // indices that's at least one larger than the max number of nodes. Because
@@ -1459,6 +1463,7 @@ namespace t2
     CondDestroy(&queue->m_MaxJobsChangedConditionalVariable);
 
     MutexDestroy(&queue->m_Lock);
+    MutexDestroy(&queue->m_BuildFinishedMutex);
 
     // Unblock all signals on the main thread.
     SignalHandlerSetCondition(nullptr);
@@ -1556,11 +1561,29 @@ namespace t2
     
     CondBroadcast(&queue->m_WorkAvailable);
 
-    while (queue->m_PendingNodeCount > 0 && SignalGetReason() == nullptr && queue->m_FailedNodeCount == 0)
+    auto ShouldContinue = [=]() {
+       if (queue->m_PendingNodeCount == 0)
+         return false;
+       if (SignalGetReason() != nullptr)
+         return false;
+       if (queue->m_FailedNodeCount > 0)
+         return false;
+
+       return true;
+    };
+
+    auto ShouldContinueWithLock = [=]()
     {
-      MutexUnlock(&queue->m_Lock);
+         MutexLock(&queue->m_Lock);
+         bool result = ShouldContinue();
+         MutexUnlock(&queue->m_Lock);
+         return result;
+    };
+
+    MutexUnlock(&queue->m_Lock);
+    while (ShouldContinueWithLock())
+    {
       PumpOSMessageLoop();
-      MutexLock(&queue->m_Lock);
 
       ProcessThrottling(queue);
 
@@ -1568,13 +1591,14 @@ namespace t2
       //Turns out that's not super trivial to implement on osx without clock_gettime() which is 10.12 and up.  Since we only
       //really support throttling and os message pumps on windows today, let's postpone this problem to another day, and use
       //the non-timing out version on non windows platforms
+
 #if WIN32
-      CondWait(&queue->m_BuildFinishedConditionalVariable, &queue->m_Lock, 100);
+      CondWait(&queue->m_BuildFinishedConditionalVariable, &queue->m_BuildFinishedMutex, 100);
 #else
-      CondWait(&queue->m_BuildFinishedConditionalVariable, &queue->m_Lock);
+      CondWait(&queue->m_BuildFinishedConditionalVariable, &queue->m_BuildFinishedMutex);
 #endif
     }
-    MutexUnlock(&queue->m_Lock);
+    MutexUnlock(&queue->m_BuildFinishedMutex);
 
     if (SignalGetReason())
       return BuildResult::kInterrupted;

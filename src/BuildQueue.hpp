@@ -77,7 +77,8 @@ namespace t2
     ConditionVariable  m_WorkAvailable;
     ConditionVariable  m_MaxJobsChangedConditionalVariable;
     ConditionVariable  m_BuildFinishedConditionalVariable;
-    
+    Mutex              m_BuildFinishedMutex;
+
     int32_t           *m_Queue;
     uint32_t           m_QueueCapacity;
     uint32_t           m_QueueReadIndex;

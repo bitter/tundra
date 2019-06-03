@@ -160,20 +160,21 @@ void WriteCommonStringPtr(BinarySegment* segment, BinarySegment* str_seg, const 
   }
 }
 
-static uint32_t GetNodeFlag(const JsonObjectValue* node, const char* name, uint32_t value, bool defaultValue = false)
+static bool GetNodeFlagBool(const JsonObjectValue* node, const char* name, bool defaultValue = false)
 {
-  uint32_t result = defaultValue ? value : 0;
-
   if (const JsonValue* val = node->Find(name))
   {
     if (const JsonBooleanValue* flag = val->AsBoolean())
     {
-      if (flag->m_Boolean)
-         result = value;
+      return flag->m_Boolean;
     }
   }
+  return defaultValue;
+}
 
-  return result;
+static uint32_t GetNodeFlag(const JsonObjectValue* node, const char* name, uint32_t value, bool defaultValue = false)
+{
+  return GetNodeFlagBool(node, name, defaultValue) ? value : 0;
 }
 
 static bool WriteNodes(

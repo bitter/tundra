@@ -1128,8 +1128,13 @@ namespace t2
 
   static void SignalMainThreadToStartCleaningUp(BuildQueue* queue)
   {
-    //this build is done! let's signal the main thread, that it can start terminating all build threads, and start exiting the program.
+    //There are three ways for a build to end:
+    //1) aborted by a signal.  The signal will end up CondSignal()-ing the m_BuildFinishedConditionalVariable that the mainthread is waiting on.  Mainthread will iniate teardown.
+    //2) by a node failing to build. In this case we will ask the main thread to initiate teardown also by signaling m_BuildFinishedConditionalVariable
+    //3) by the build being succesfully finished.  Same as #2, we also signal, and ask the mainthread to initiate a cleanup
+
     MutexLock(&queue->m_BuildFinishedMutex);
+    queue->m_BuildFinishedConditionalVariableSignaled = true;
     CondSignal(&queue->m_BuildFinishedConditionalVariable);
     MutexUnlock(&queue->m_BuildFinishedMutex);
   }
@@ -1199,11 +1204,10 @@ namespace t2
         case BuildProgress::kFailed:
           queue->m_FailedNodeCount++;
 
-          SignalMainThreadToStartCleaningUp(queue);
-          WakeupAllBuildThreadsSoTheyCanExit(queue);
-
           node->m_BuildResult = 1;
           node->m_Progress    = BuildProgress::kCompleted;
+
+          SignalMainThreadToStartCleaningUp(queue);
           break;
 
         case BuildProgress::kCompleted:
@@ -1248,30 +1252,16 @@ namespace t2
     return state;
   }
 
-  bool HasBuildStoppingFailures(const BuildQueue* queue)
-  {
-    if (queue->m_FailedNodeCount > 0)
-    {
-      if (0 == (queue->m_Config.m_Flags & BuildQueueConfig::kFlagContinueOnError))
-      {
-        return true;
-      }
-    }
-    return false;
-  }
-
   static bool ShouldKeepBuilding(BuildQueue* queue)
   {
-    // Stop running if we were signalled
-    if (nullptr != SignalGetReason())
-      return false;
-
-    // Stop running if there are errors and we're stopping on the first error.
-    if (HasBuildStoppingFailures(queue))
-      return false;
-
     // If we're quitting, definitely stop building.
-    if (queue->m_QuitSignalled)
+    if (queue->m_MainThreadWantsToCleanUp)
+      return false;
+
+
+    //you'd think we don't have to check for this, as the main thread will realize the build has failed, and will shut us down,
+    //but if we don't check this in the buildloop, we'll actually continue to build nodes whose dependencies have failed.
+    if (queue->m_FailedNodeCount > 0)
       return false;
 
     return true;
@@ -1282,8 +1272,7 @@ namespace t2
     BuildQueue        *queue = thread_state->m_Queue;
     ConditionVariable *cv    = &queue->m_WorkAvailable;
     Mutex             *mutex = &queue->m_Lock;
-    Mutex             *maxJobsChangedMutex = &queue->m_MaxJobsChangedMutex;
-    ConditionVariable* maxJobsChangedConditionalVariable = &queue->m_MaxJobsChangedConditionalVariable;
+
     MutexLock(mutex);
     bool waitingForWork = false;
 
@@ -1295,29 +1284,7 @@ namespace t2
       
       ProfilerScope profiler_scope("HibernateForThrottling", thread_state->m_ProfilerThreadId, nullptr, "thread_state_sleeping");
 
-      //Ok, it looks like we will need to hibernate. To do this, we need to first let go of the regular build mutex, as we
-      //are currently the thread that owns it.
-      MutexUnlock(mutex);
-
-      //now, we need to go and do a careful check again if we really need to hibernate.  Because we did the initial check without a lock,
-      //the max jobs value might have changed again by now. To do a safe check, we're going to take the max jobs change mutex lock here
-      MutexLock(maxJobsChangedMutex);
-
-      //and check the condition again.
-      if (thread_state->m_ThreadIndex >= queue->m_DynamicMaxJobs)
-      {
-        //Almost always this if statement will hit, and we can go into a very long hibernation state.
-        //we'll use CondWait to do that, and expect to be woken up by the maxJobsChangedConditionalVariable,  should max jobs change again in the future.
-        //CondWait also automatically releases maxJobsChangedMutex, as part conditional variables api work.
-        CondWait(maxJobsChangedConditionalVariable, maxJobsChangedMutex);
-      }
-
-      //when CondWait returns, it will have re-aquired maxJobsChangedMutex. We have no need for the lock here, so we want to release it
-      MutexUnlock(maxJobsChangedMutex);
-
-      //and to proceed with this thread starting to do actual work again (or shutting down), we'll need to get back to regular build mutex, before we can proceed.
-      MutexLock(mutex);
-
+      CondWait(&thread_state->m_Queue->m_MaxJobsChangedConditionalVariable, mutex);
       return true;
     };
 
@@ -1390,11 +1357,11 @@ namespace t2
     CHECK(config->m_MaxExpensiveCount > 0 && config->m_MaxExpensiveCount <= config->m_ThreadCount);
 
     MutexInit(&queue->m_Lock);
-    MutexInit(&queue->m_MaxJobsChangedMutex);
-    MutexInit(&queue->m_BuildFinishedMutex);
     CondInit(&queue->m_WorkAvailable);
     CondInit(&queue->m_MaxJobsChangedConditionalVariable);
     CondInit(&queue->m_BuildFinishedConditionalVariable);
+    MutexInit(&queue->m_BuildFinishedMutex);
+    MutexLock(&queue->m_BuildFinishedMutex);
 
     // Compute queue capacity. Allocate space for a power of two number of
     // indices that's at least one larger than the max number of nodes. Because
@@ -1412,7 +1379,8 @@ namespace t2
     queue->m_PendingNodeCount   = 0;
     queue->m_FailedNodeCount    = 0;
     queue->m_ProcessedNodeCount = 0;
-    queue->m_QuitSignalled      = false;
+    queue->m_MainThreadWantsToCleanUp = false;
+    queue->m_BuildFinishedConditionalVariableSignaled = false;
     queue->m_ExpensiveRunning   = 0;
     queue->m_ExpensiveWaitCount = 0;
     queue->m_ExpensiveWaitList  = HeapAllocateArray<NodeState*>(heap, capacity);
@@ -1435,7 +1403,7 @@ namespace t2
 
     // Block all signals on the main thread.
     SignalBlockThread(true);
-    SignalHandlerSetCondition(&queue->m_WorkAvailable);
+    SignalHandlerSetCondition(&queue->m_BuildFinishedConditionalVariable);
 
     // Create build threads.
     for (int i = 0, thread_count = queue->m_Config.m_ThreadCount; i < thread_count; ++i)
@@ -1456,11 +1424,12 @@ namespace t2
     Log(kDebug, "destroying build queue");
     const BuildQueueConfig* config = &queue->m_Config;
 
+    //We need to take the m_Lock while setting the m_MainThreadWantsToCleanUp boolean, so that we are sure that when we wake up all buildthreads right after,  they will all be in a state where they
+    //are guaranteed to go and check if they should quit.  possible states the buildthread can be in: waiting for a signal so they can do more work,  or actually doing build work.
     MutexLock(&queue->m_Lock);
-    queue->m_QuitSignalled = true;
-    MutexUnlock(&queue->m_Lock);
-
+    queue->m_MainThreadWantsToCleanUp = true;
     WakeupAllBuildThreadsSoTheyCanExit(queue);
+    MutexUnlock(&queue->m_Lock);
 
     for (int i = 0, thread_count = config->m_ThreadCount; i < thread_count; ++i)
     {
@@ -1495,7 +1464,7 @@ namespace t2
     CondDestroy(&queue->m_MaxJobsChangedConditionalVariable);
 
     MutexDestroy(&queue->m_Lock);
-    MutexDestroy(&queue->m_MaxJobsChangedMutex);
+    MutexDestroy(&queue->m_BuildFinishedMutex);
 
     // Unblock all signals on the main thread.
     SignalHandlerSetCondition(nullptr);
@@ -1504,10 +1473,8 @@ namespace t2
 
   static void SetNewDynamicMaxJobs(BuildQueue* queue, int maxJobs, const char* formatString, ...)
   {
-    MutexLock(&queue->m_MaxJobsChangedMutex);
     queue->m_DynamicMaxJobs = maxJobs;
     CondBroadcast(&queue->m_MaxJobsChangedConditionalVariable);
-    MutexUnlock(&queue->m_MaxJobsChangedMutex);
 
     char buffer[2000];
     va_list args;
@@ -1515,16 +1482,16 @@ namespace t2
     vsnprintf(buffer, sizeof(buffer), formatString, args);
     va_end(args);
 
-    MutexLock(&queue->m_Lock);
     PrintNonNodeActionResult(0, queue->m_Config.m_MaxNodes, MessageStatusLevel::Warning, buffer);
-
-    MutexUnlock(&queue->m_Lock);
   }
 
   static bool throttled = false;
 
   static void ProcessThrottling(BuildQueue* queue)
   {
+    if (!queue->m_Config.m_ThrottleOnHumanActivity)
+      return;
+
     double t = TimeSinceLastDetectedHumanActivityOnMachine();
 
     //in case we've not seen any activity at all (which is what happens if you just started the build), we don't want to do any throttling.
@@ -1547,7 +1514,7 @@ namespace t2
       //ok, let's actually throttle;
       int maxJobs = queue->m_Config.m_ThrottledThreadsAmount;
       if (maxJobs == 0)
-        maxJobs = std::max(1, (int)(queue->m_Config.m_ThreadCount * 0.75));
+        maxJobs = std::max(1, (int)(queue->m_Config.m_ThreadCount * 0.6));
       SetNewDynamicMaxJobs(queue, maxJobs, "Human activity detected, throttling to %d simultaneous jobs to leave system responsive", maxJobs);
       throttled = true;
     }
@@ -1558,7 +1525,7 @@ namespace t2
 
     //if we're throttled but haven't seen any user interaction with the machine for a while, we'll unthrottle.
     int maxJobs = queue->m_Config.m_ThreadCount;
-    SetNewDynamicMaxJobs(queue, maxJobs, "No human activity detected on this machine for %d seconds, unthrottling back up to %d simultaneous jobs", (int)t, throttleInactivityPeriod, maxJobs);
+    SetNewDynamicMaxJobs(queue, maxJobs, "No human activity detected on this machine for %d seconds, unthrottling back up to %d simultaneous jobs", throttleInactivityPeriod, maxJobs);
     throttled = false;
   }
 
@@ -1595,19 +1562,27 @@ namespace t2
     
     CondBroadcast(&queue->m_WorkAvailable);
 
+    auto ShouldContinue = [=]() {
+       if (queue->m_BuildFinishedConditionalVariableSignaled)
+         return false;
+       if (SignalGetReason() != nullptr)
+         return false;
+       
+       return true;
+    };
+
     MutexUnlock(&queue->m_Lock);
-
-
-    MutexLock(&queue->m_BuildFinishedMutex);
-    while (queue->m_PendingNodeCount > 0 && SignalGetReason() == nullptr && queue->m_FailedNodeCount == 0)
+    while (ShouldContinue())
     {
       PumpOSMessageLoop();
+
       ProcessThrottling(queue);
 
       //we need a timeout version of CondWait so that we ensure we continue to pump the OS message loop from time to time.
       //Turns out that's not super trivial to implement on osx without clock_gettime() which is 10.12 and up.  Since we only
       //really support throttling and os message pumps on windows today, let's postpone this problem to another day, and use
       //the non-timing out version on non windows platforms
+
 #if WIN32
       CondWait(&queue->m_BuildFinishedConditionalVariable, &queue->m_BuildFinishedMutex, 100);
 #else

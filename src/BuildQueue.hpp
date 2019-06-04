@@ -76,11 +76,10 @@ namespace t2
     Mutex              m_Lock;
     ConditionVariable  m_WorkAvailable;
     ConditionVariable  m_MaxJobsChangedConditionalVariable;
-    Mutex              m_MaxJobsChangedMutex;
-
     ConditionVariable  m_BuildFinishedConditionalVariable;
     Mutex              m_BuildFinishedMutex;
-    
+    bool               m_BuildFinishedConditionalVariableSignaled;
+
     int32_t           *m_Queue;
     uint32_t           m_QueueCapacity;
     uint32_t           m_QueueReadIndex;
@@ -97,7 +96,7 @@ namespace t2
     NodeState        **m_ExpensiveWaitList;
     uint32_t          *m_SharedResourcesCreated;
     Mutex              m_SharedResourcesLock;
-    bool               m_QuitSignalled;
+    bool               m_MainThreadWantsToCleanUp;
     uint32_t           m_DynamicMaxJobs;
   };
 

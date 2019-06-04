@@ -1134,6 +1134,7 @@ namespace t2
     //3) by the build being succesfully finished.  Same as #2, we also signal, and ask the mainthread to initiate a cleanup
 
     MutexLock(&queue->m_BuildFinishedMutex);
+    queue->m_BuildFinishedConditionalVariableSignaled = true;
     CondSignal(&queue->m_BuildFinishedConditionalVariable);
     MutexUnlock(&queue->m_BuildFinishedMutex);
   }
@@ -1203,11 +1204,10 @@ namespace t2
         case BuildProgress::kFailed:
           queue->m_FailedNodeCount++;
 
-          SignalMainThreadToStartCleaningUp(queue);
-          WakeupAllBuildThreadsSoTheyCanExit(queue);
-
           node->m_BuildResult = 1;
           node->m_Progress    = BuildProgress::kCompleted;
+
+          SignalMainThreadToStartCleaningUp(queue);
           break;
 
         case BuildProgress::kCompleted:
@@ -1380,6 +1380,7 @@ namespace t2
     queue->m_FailedNodeCount    = 0;
     queue->m_ProcessedNodeCount = 0;
     queue->m_MainThreadWantsToCleanUp = false;
+    queue->m_BuildFinishedConditionalVariableSignaled = false;
     queue->m_ExpensiveRunning   = 0;
     queue->m_ExpensiveWaitCount = 0;
     queue->m_ExpensiveWaitList  = HeapAllocateArray<NodeState*>(heap, capacity);
@@ -1562,26 +1563,16 @@ namespace t2
     CondBroadcast(&queue->m_WorkAvailable);
 
     auto ShouldContinue = [=]() {
-       if (queue->m_PendingNodeCount == 0)
+       if (queue->m_BuildFinishedConditionalVariableSignaled)
          return false;
        if (SignalGetReason() != nullptr)
          return false;
-       if (queue->m_FailedNodeCount > 0)
-         return false;
-
+       
        return true;
     };
 
-    auto ShouldContinueWithLock = [=]()
-    {
-         MutexLock(&queue->m_Lock);
-         bool result = ShouldContinue();
-         MutexUnlock(&queue->m_Lock);
-         return result;
-    };
-
     MutexUnlock(&queue->m_Lock);
-    while (ShouldContinueWithLock())
+    while (ShouldContinue())
     {
       PumpOSMessageLoop();
 

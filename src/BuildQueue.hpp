@@ -78,6 +78,7 @@ namespace t2
     ConditionVariable  m_MaxJobsChangedConditionalVariable;
     ConditionVariable  m_BuildFinishedConditionalVariable;
     Mutex              m_BuildFinishedMutex;
+    bool               m_BuildFinishedConditionalVariableSignaled;
 
     int32_t           *m_Queue;
     uint32_t           m_QueueCapacity;

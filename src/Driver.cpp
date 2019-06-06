@@ -337,11 +337,10 @@ void DriverReportStartup(Driver* self, const char** targets, int target_count)
 
 bool DriverInitData(Driver* self)
 {
-  ProfilerScope prof_scope("Tundra InitData", 0);
-
   if (!DriverPrepareDag(self, s_DagFileName))
     return false;
 
+  ProfilerScope prof_scope("DriverInitData", 0);
   // do not produce/overwrite structured log output file,
   // if we're only reporting something and not doing an actual build
   if (self->m_Options.m_IncludesOutput == nullptr && !self->m_Options.m_ShowHelp && !self->m_Options.m_ShowTargets)
@@ -390,7 +389,11 @@ static bool DriverPrepareDag(Driver* self, const char* dag_fn)
   if (!self->m_Options.m_ForceDagRegen && loadFrozenDataResult && self->m_DagData->m_ForceDagRebuild == 0)
   {
     uint64_t time_exec_started = TimerGet();
-    bool checkResult = DriverCheckDagSignatures(self, out_of_date_reason, out_of_date_reason_length);
+    bool checkResult;
+    {
+      ProfilerScope prof_scope("DriverCheckDagSignatures", 0);
+      checkResult = DriverCheckDagSignatures(self, out_of_date_reason, out_of_date_reason_length);
+    }
     uint64_t now = TimerGet();
     int duration = TimerDiffSeconds(time_exec_started, now);
     if (duration > 1)
@@ -408,9 +411,11 @@ static bool DriverPrepareDag(Driver* self, const char* dag_fn)
 
   uint64_t time_exec_started = TimerGet();
   // We need to generate the DAG data
-  if (!GenerateDag(s_BuildFile, dag_fn))
-    return false;
-
+  {
+    ProfilerScope prof_scope("RunFrontend", 0);
+    if (!GenerateDag(s_BuildFile, dag_fn))
+      return false;
+  }
   PrintNonNodeActionResult(TimerDiffSeconds(time_exec_started, TimerGet()), 1, MessageStatusLevel::Success, out_of_date_reason);
 
   // The DAG had better map in now, or we can give up.

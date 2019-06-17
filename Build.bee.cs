@@ -63,7 +63,9 @@ class Build
             this.CompilerSettings().Add(compiler => compiler.WithCppLanguageVersion(CppLanguageVersion.Cpp11));
             this.CompilerSettingsForGccLike().Add(compiler => compiler.WithVisibility(Visibility.Default));
 
-            //      this.Defines.Add("HAVE_GIT_INFO");
+            // We can enable this by committing valgrind to the repository or uplodaing a public stevedore artifact.
+            this.Defines.Add("USE_VALGRIND=NO");
+
             this.Defines.Add(config => config.Platform == Platform.Windows, "WIN32_LEAN_AND_MEAN", "NOMINMAX", "WINVER=0x0600", "_WIN32_WINNT=0x0600");
             this.DynamicLinkerSettingsForMsvc().Add(linker => linker.WithSubSystemType(SubSystemType.Console));
         }

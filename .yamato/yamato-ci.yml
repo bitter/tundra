@@ -1,0 +1,67 @@
+linux:
+  name: "Linux"
+  agent:
+    type: Unity::VM
+    image: cds-ops/cds-ubuntu-18.04-base:stable
+    flavor: b1.small
+  commands:
+    - git submodule init
+    - git submodule update
+    - mono bee.exe build::tundra2::release
+    - mono bee.exe run::tundra2-unittest::release
+  artifacts:
+    artifacts:
+      paths:
+        - "build/**/*"
+mac:
+  name: "Mac"
+  agent:
+    type: Unity::VM::osx
+    image: buildfarm/mac:stable
+    flavor: m1.mac
+  commands:
+    - git submodule init
+    - git submodule update
+    - mono bee.exe build::tundra2::release
+    - mono bee.exe run::tundra2-unittest::release
+  artifacts:
+    artifacts:
+      paths:
+        - "build/**/*"
+windows:
+  name: "Windows"
+  agent:
+    type: Unity::VM
+    image: cds-ops/win10-base:stable
+    flavor: b1.small
+  commands:
+    - git submodule init
+    - git submodule update
+    - bee.exe build::tundra2::release
+    - bee.exe run::tundra2-unittest::release
+  artifacts:
+    artifacts:
+      paths:
+        - "build/**/*"
+builds-zip:
+  name: "zPackage"
+  agent:
+    type: Unity::VM
+    image: cds-ops/cds-ubuntu-18.04-base:stable
+    flavor: b1.small
+  commands:
+    - git submodule init
+    - git submodule update
+    - rm -r .git unittest/googletest/.git
+  artifacts:
+    builds:
+        paths:
+        - "**/*"
+  triggers:
+    branches:
+      only:
+      - "/.*/"
+  dependencies:
+    - .yamato/yamato-ci.yml#linux
+    - .yamato/yamato-ci.yml#mac
+    - .yamato/yamato-ci.yml#windows

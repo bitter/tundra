@@ -1,22 +1,11 @@
 use File::Path qw(mkpath);
 
-mkpath("artifacts/$^O");
-
-if ($^O eq "linux")
-{
-  $ENV{"CXX"} = "g++";
-  $ENV{"CC"} = "gcc";
-}
-
 if ($^O eq "MSWin32")
 {
-    system("msbuild vs2017\\Tundra.sln /P:Configuration=Release") eq 0 or die("failed msbuild");
-    system("copy vs2017\\x64\\Release\\tundra2.exe artifacts\\$^O") eq 0 or die("failed copy");
+    system("bee.exe build::tundra2::release") eq 0 or die("failed building tundra");
+    system("bee.exe run::tundra2-unittest::release") eq 0 or die("failed tundra tests");
 } else
 {
-    system("make") eq 0 or die("failed make");
-    system("build/t2-unittest") eq 0 or die("running unit tests failed");
-    system("cp build/tundra2 artifacts/$^O/") eq 0 or die("failed copy");
+    system("mono bee.exe build::tundra2::release") eq 0 or die("failed building tundra");
+    system("mono bee.exe run::tundra2-unittest::release") eq 0 or die("failed tundra tests");
 }
-
-

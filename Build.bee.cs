@@ -116,7 +116,7 @@ class Build
         luaLibrary.Sources.Add(LuaSources);
 
         // tundra library
-        var tundraLibraryProgram = new TundraNativeProgram("tundra");
+        var tundraLibraryProgram = new TundraNativeProgram("libtundra");
         tundraLibraryProgram.CompilerSettingsForMsvc().Add(compiler => compiler.WithUnicode(false));
         tundraLibraryProgram.Sources.Add(TundraSources);
         tundraLibraryProgram.PublicIncludeDirectories.Add(SourceFolder);
@@ -147,7 +147,7 @@ class Build
         tundraLuaProgram.Sources.Add(TundraLuaSources);
 
         // tundra unit tests
-        var tundraUnitTestProgram = new TundraNativeProgram("t2-unittest");
+        var tundraUnitTestProgram = new TundraNativeProgram("tundra2-unittest");
         tundraUnitTestProgram.Libraries.Add(tundraLibraryProgram);
         tundraUnitTestProgram.Sources.Add(TundraUnitTestSources);
         tundraUnitTestProgram.IncludeDirectories.Add($"{UnitTestSourceFolder}/googletest/googletest");

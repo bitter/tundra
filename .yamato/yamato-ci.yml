@@ -7,8 +7,8 @@ linux:
   commands:
     - git submodule init
     - git submodule update
-    - mono bee.exe build::tundra2::release
-    - mono bee.exe run::tundra2-unittest::release
+    - mono bee.exe build::tundra2::master
+    - mono bee.exe run::tundra2-unittest::master
   artifacts:
     artifacts:
       paths:
@@ -22,8 +22,8 @@ mac:
   commands:
     - git submodule init
     - git submodule update
-    - mono bee.exe build::tundra2::release
-    - mono bee.exe run::tundra2-unittest::release
+    - mono bee.exe build::tundra2::master
+    - mono bee.exe run::tundra2-unittest::master
   artifacts:
     artifacts:
       paths:
@@ -37,8 +37,8 @@ windows:
   commands:
     - git submodule init
     - git submodule update
-    - bee.exe build::tundra2::release
-    - bee.exe run::tundra2-unittest::release
+    - bee.exe build::tundra2::master
+    - bee.exe run::tundra2-unittest::master
   artifacts:
     artifacts:
       paths:

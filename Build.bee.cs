@@ -164,6 +164,7 @@ class Build
         {
             foreach (var config in new[]
             {
+                new NativeProgramConfiguration(CodeGen.Master, toolchain, lump: false),
                 new NativeProgramConfiguration(CodeGen.Release, toolchain, lump: false),
                 new NativeProgramConfiguration(CodeGen.Debug, toolchain, lump: false),
             })

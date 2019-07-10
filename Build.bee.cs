@@ -9,7 +9,7 @@ using Bee.Toolchain.VisualStudio;
 using Bee.Tools;
 using NiceIO;
 using Unity.BuildSystem.NativeProgramSupport;
-using Unity.BuildSystem.VisualStudio;
+using static Unity.BuildSystem.NativeProgramSupport.NativeProgramConfiguration;
 
 class Build
 {
@@ -63,10 +63,9 @@ class Build
             this.CompilerSettings().Add(compiler => compiler.WithCppLanguageVersion(CppLanguageVersion.Cpp11));
             this.CompilerSettingsForGccLike().Add(compiler => compiler.WithVisibility(Visibility.Default));
 
-            // We can enable this by committing valgrind to the repository or uplodaing a public stevedore artifact.
+            // We can enable this by committing valgrind to the repository or uploading a public stevedore artifact.
             this.Defines.Add("USE_VALGRIND=NO");
-
-            this.Defines.Add(config => config.Platform == Platform.Windows, "WIN32_LEAN_AND_MEAN", "NOMINMAX", "WINVER=0x0600", "_WIN32_WINNT=0x0600");
+            this.Defines.Add(IsWindows, "WIN32_LEAN_AND_MEAN", "NOMINMAX", "WINVER=0x0600", "_WIN32_WINNT=0x0600");
             this.DynamicLinkerSettingsForMsvc().Add(linker => linker.WithSubSystemType(SubSystemType.Console));
         }
     }
@@ -103,7 +102,7 @@ class Build
     {
         var builtProgram = program.SetupSpecificConfiguration(config, format);
         var deployedProgram = builtProgram.DeployTo($"build/{config.ToolChain.ActionName.ToLower()}/{config.CodeGen.ToString().ToLower()}");
-        RegisterAlias($"build::{program.Name}", config, deployedProgram.Path);
+        RegisterAlias($"{program.Name}", config, deployedProgram.Path);
         return deployedProgram;
     }
 
@@ -120,7 +119,7 @@ class Build
         tundraLibraryProgram.CompilerSettingsForMsvc().Add(compiler => compiler.WithUnicode(false));
         tundraLibraryProgram.Sources.Add(TundraSources);
         tundraLibraryProgram.PublicIncludeDirectories.Add(SourceFolder);
-        tundraLibraryProgram.Libraries.Add(c => c.Platform == Platform.Windows,
+        tundraLibraryProgram.Libraries.Add(IsWindows,
             new SystemLibrary("Rstrtmgr.lib"),
             new SystemLibrary("Shlwapi.lib"),
             new SystemLibrary("User32.lib")
@@ -137,13 +136,13 @@ class Build
             tundraExecutableProgram.Sources.Add(gitRevFile);
             tundraExecutableProgram.Defines.Add("HAVE_GIT_INFO");
         }
-        // tundra executable workaround to make sure we don't conflict with tundra executable used by bee
+        // workaround to make sure we don't conflict with tundra executable used by bee
         tundraExecutableProgram.ArtifactsGroup = "t2";
 
         // tundra lua executable
         var tundraLuaProgram = new TundraNativeProgram("t2-lua");
         tundraLuaProgram.Libraries.Add(tundraLibraryProgram, luaLibrary);
-        tundraLuaProgram.Libraries.Add(c => c.Platform == Platform.Windows, new SystemLibrary("Advapi32.lib"));
+        tundraLuaProgram.Libraries.Add(IsWindows, new SystemLibrary("Advapi32.lib"));
         tundraLuaProgram.Sources.Add(TundraLuaSources);
 
         // tundra unit tests
@@ -165,7 +164,6 @@ class Build
             foreach (var config in new[]
             {
                 new NativeProgramConfiguration(CodeGen.Master, toolchain, lump: false),
-                new NativeProgramConfiguration(CodeGen.Release, toolchain, lump: false),
                 new NativeProgramConfiguration(CodeGen.Debug, toolchain, lump: false),
             })
             {
@@ -180,7 +178,7 @@ class Build
                 if (Bee.PramBinding.Pram.CanLaunch(toolchain.Platform, toolchain.Architecture))
                 {
                     var tundraUnitTestResult = Bee.PramBinding.Pram.SetupLaunch(new Bee.PramBinding.Pram.LaunchArguments(toolchain.ExecutableFormat, tundraUnitTestExecutable));
-                    RegisterAlias($"run::{tundraUnitTestProgram.Name}", config, tundraUnitTestResult.Result);
+                    RegisterAlias($"{tundraUnitTestProgram.Name}-report", config, tundraUnitTestResult.Result);
                 }
             }
         }

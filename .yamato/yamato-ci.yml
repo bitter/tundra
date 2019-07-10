@@ -1,5 +1,5 @@
 linux:
-  name: "Linux"
+  name: "Build & Test - Linux"
   agent:
     type: Unity::VM
     image: cds-ops/cds-ubuntu-18.04-base:stable
@@ -7,14 +7,15 @@ linux:
   commands:
     - git submodule init
     - git submodule update
-    - mono bee.exe build::tundra2::master
-    - mono bee.exe run::tundra2-unittest::master
+    - mono bee.exe tundra2::linux::master
+    - mono bee.exe tundra2-unittest-report::linux::master
   artifacts:
     artifacts:
       paths:
         - "build/**/*"
+
 mac:
-  name: "Mac"
+  name: "Build & Test - Mac"
   agent:
     type: Unity::VM::osx
     image: buildfarm/mac:stable
@@ -22,14 +23,15 @@ mac:
   commands:
     - git submodule init
     - git submodule update
-    - mono bee.exe build::tundra2::master
-    - mono bee.exe run::tundra2-unittest::master
+    - mono bee.exe tundra2::mac::master
+    - mono bee.exe tundra2-unittest-report::mac::master
   artifacts:
     artifacts:
       paths:
         - "build/**/*"
+
 windows:
-  name: "Windows"
+  name: "Build & Test - Windows"
   agent:
     type: Unity::VM
     image: cds-ops/win10-base:stable
@@ -37,14 +39,15 @@ windows:
   commands:
     - git submodule init
     - git submodule update
-    - bee.exe build::tundra2::master
-    - bee.exe run::tundra2-unittest::master
+    - bee.exe tundra2::win::master
+    - bee.exe tundra2-unittest-report::win::master
   artifacts:
     artifacts:
       paths:
         - "build/**/*"
-builds-zip:
-  name: "zPackage"
+
+package:
+  name: "Package Distribution"
   agent:
     type: Unity::VM
     image: cds-ops/cds-ubuntu-18.04-base:stable

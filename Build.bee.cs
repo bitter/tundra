@@ -101,7 +101,7 @@ class Build
     static BuiltNativeProgram SetupSpecificConfiguration(NativeProgram program, NativeProgramConfiguration config, NativeProgramFormat format)
     {
         var builtProgram = program.SetupSpecificConfiguration(config, format);
-        var deployedProgram = builtProgram.DeployTo($"build/{config.ToolChain.ActionName.ToLower()}/{config.CodeGen.ToString().ToLower()}");
+        var deployedProgram = builtProgram.DeployTo($"build/{config.Platform.Name}-{config.ToolChain.Architecture.Name}/{config.CodeGen}".ToLower());
         RegisterAlias($"{program.Name}", config, deployedProgram.Path);
         return deployedProgram;
     }

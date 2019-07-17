@@ -53,13 +53,14 @@ package:
     image: cds-ops/cds-ubuntu-18.04-base:stable
     flavor: b1.small
   commands:
+    - sudo apt install -y p7zip
     - git submodule init
     - git submodule update
-    - rm -r .git unittest/googletest/.git
+    - 7za a -tzip builds.zip * -xr\!unittest/googletest/.git
   artifacts:
-    builds:
+    artifacts:
         paths:
-        - "**/*"
+        - builds.zip
   triggers:
     branches:
       only:
